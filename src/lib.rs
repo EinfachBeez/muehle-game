@@ -1,4 +1,8 @@
 use log::warn;
+use std::fmt::{Display, Formatter, Write};
+use std::io::Error;
+use std::iter::{once, Map};
+use std::str::{FromStr};
 
 const MILLS: [[u8;3]; 16] = [
     [7, 0, 1],
@@ -23,6 +27,33 @@ const MILLS: [[u8;3]; 16] = [
 
 ];
 
+const ADJACENT: [&[u8]; PIECE_COUNT] = [
+    &[1, 7, 8],
+    &[0, 2],
+    &[1, 3, 10],
+    &[2, 4],
+    &[3, 5, 12],
+    &[4, 6],
+    &[5, 7, 14],
+    &[6, 0],
+    &[0, 9, 15],
+    &[8, 10],
+    &[2, 9, 11, 18],
+    &[10, 12],
+    &[4, 11, 13, 20],
+    &[12, 14],
+    &[6, 13, 15, 22],
+    &[8, 14],
+    &[8, 17, 23],
+    &[16, 18],
+    &[10, 17, 19],
+    &[18, 20],
+    &[12, 19, 21],
+    &[20, 22],
+    &[14, 21, 23],
+    &[16, 22]
+];
+
 const PIECE_COUNT: usize = 24;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -31,10 +62,26 @@ pub enum Player {
     Black
 }
 
+impl Player {
+    fn opposite(&self) -> Player {
+        match self {
+            Player::White => Player::Black,
+            Player::Black => Player::White
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Point {
     Empty,
     Occupied(Player)
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Move {
+    PLACE { position: u8, kill: Option<u8> }, // todo!() hier kann man auch killen
+    MOVE { from_position: u8, to_position: u8, kill: Option<u8> },
+    FLY { from_position: u8, to_position: u8, kill: Option<u8>} // todo!() vllt. rausnehmen und 1. Move
 }
 
 impl Point {
@@ -47,31 +94,24 @@ impl Point {
 }
 
 pub enum GamePhase {
-    Placing {
-        white_pieces_left: u8,
-        black_pieces_left: u8
-    },
-    Moving {
-        white_pieces_left: u8,
-        black_pieces_left: u8
-    },
-    Flying {
-        white_pieces_left: u8,
-        black_pieces_left: u8
-    }
+    Placing,
+    Moving,
+    Flying
 }
 
 #[derive(Clone)]
 pub struct Position {
     pieces: [Point; PIECE_COUNT],
-    active_player: Player
+    active_player: Player,
+    pieces_to_place: (u8, u8)
 }
 
 impl Position {
-    pub fn new() -> Self {
+    pub fn new(player: Player) -> Self {
         Position {
             pieces: [Point::Empty; PIECE_COUNT],
-            active_player: Player::White
+            active_player: player,
+            pieces_to_place: (9, 9)
         }
     }
 
@@ -100,9 +140,9 @@ impl Position {
         old_piece
     }
 
-    pub fn is_move_valid(&self, move_action: &Move) -> bool {
-        match move_action.action {
-            MoveAction::PLACE {position} => {
+    pub fn is_move_valid(&self, move_action: Move) -> bool {
+        match move_action {
+            Move::PLACE {position, kill} => {
                 if !Self::is_index_valid(position) {
                     return false;
                 }
@@ -111,30 +151,30 @@ impl Position {
                 }
                 true
             },
-            MoveAction::MOVE {from_position, to_position} => {
+            Move::MOVE {from_position, to_position, kill} => {
                 if !Self::is_index_valid(from_position) && !Self::is_index_valid(to_position) {
                     return false;
                 }
-                let option = self.get_piece_at_position(from_position);
-                match option {
-                    Point::Occupied(player) if player != self.active_player => false,
-                    _ => false
-                };
+                if let Point::Occupied(player) = self.get_piece_at_position(from_position) {
+                    if player != self.active_player {
+                        return false;
+                    }
+                }
                 if !Self::is_move_adjacent(from_position, to_position) {
                     return false;
                 }
 
                 true
             },
-            MoveAction::FLY {from_position, to_position} => {
+            Move::FLY {from_position, to_position, kill} => {
                 if !Self::is_index_valid(from_position) && !Self::is_index_valid(to_position) {
                     return false;
                 }
-                let option = self.get_piece_at_position(from_position);
-                match option {
-                    Point::Occupied(player) if player != self.active_player => false,
-                    _ => false
-                };
+                if let Point::Occupied(player) = self.get_piece_at_position(from_position) {
+                    if player != self.active_player {
+                        return false;
+                    }
+                }
                 if self.get_piece_at_position(to_position).is_occupied() {
                     return false;
                 }
@@ -144,21 +184,20 @@ impl Position {
         }
     }
 
-    pub fn change_piece_position(&mut self, move_action: &Move) {
+    pub fn change_piece_position(&mut self, move_action: Move) {
         if !self.is_move_valid(move_action) {
             warn!("Invalid move {move_action:?}");
             return;
         }
-        match move_action.action {
-            MoveAction::PLACE {position} => {
+        match move_action {
+            Move::PLACE {position, kill} => {
                 self.set_piece_at_position(position, Point::Occupied(self.active_player));
             }
-            MoveAction::MOVE {from_position, to_position} |
-            MoveAction::FLY {from_position, to_position} => {
+            Move::MOVE {from_position, to_position, kill} |
+            Move::FLY {from_position, to_position, kill} => {
                 let point = self.get_piece_at_position(from_position);
                 self.set_piece_at_position(from_position, Point::Empty);
                 self.set_piece_at_position(to_position, point);
-
 
             }
         }
@@ -192,21 +231,22 @@ impl Position {
         self.set_piece_at_position(piece, Point::Empty);
     }
 
+    pub fn list_possible_pieces_to_remove(&self, player: Player) -> Vec<u8> {
+        self.pieces.iter().enumerate()
+            .filter(|&(i, &p)| {
+                p == Point::Occupied(player) && !self.is_mill_closed(i as u8, player)
+            })
+            .map(|(i, _)| i as u8)
+            .collect()
+    }
+
     pub fn is_piece_removal_possible(&self, piece: u8) -> bool {
         let point = self.get_piece_at_position(piece);
         match point {
             Point::Occupied(player) if player != self.active_player => {
                 // find stones outside from mills
-                let no_mill_stones: Vec<u8> = self.pieces.iter().enumerate()
-                    .filter(|&(i, &p)| p == Point::Occupied(player) && !self.is_mill_closed(i as u8, player))
-                    .map(|(i, _)| i as u8)
-                    .collect();
-
-                if no_mill_stones.contains(&piece) {
-                    return true;
-                }
-
-                false
+                let no_mill_stones = self.list_possible_pieces_to_remove(player);
+                no_mill_stones.is_empty() || no_mill_stones.contains(&piece)
             }
             _ => {
                 warn!("No piece to collect");
@@ -225,14 +265,110 @@ impl Position {
         false
     }
 
-    fn does_mill_exists_for_player(&self, player: Player) -> bool {
-        for i in 0..self.pieces.len() {
-            return match self.pieces[i] {
-                Point::Occupied(p) if player == p && self.is_mill_closed(i as u8, player) => true,
-                _ => continue
+    fn get_game_phase_for_player(&self, player: Player) -> GamePhase {
+        match player {
+            Player::White => {
+                if self.pieces_to_place.0 != 0 {
+                    return GamePhase::Placing
+                }
+                let pieces_on_board = self.get_pieces_on_board_for_player(Player::White);
+                if pieces_on_board <= 3 {
+                    return GamePhase::Flying;
+                }
+            }
+            Player::Black => {
+                if self.pieces_to_place.1 != 0 {
+                    return GamePhase::Placing
+                }
+                let pieces_on_board = self.get_pieces_on_board_for_player(Player::Black);
+                if pieces_on_board <= 3 {
+                    return GamePhase::Flying
+                }
             }
         }
-        false
+
+        GamePhase::Moving
+    }
+
+    pub fn enumerate_moves(&self) -> impl Iterator<Item = Move> {
+        let player = self.active_player;
+        let phase = self.get_game_phase_for_player(self.active_player);
+
+        // list possible kills
+        let no_mill_stones_from_enemy = self.list_possible_pieces_to_remove(player.opposite());
+
+        let empty_points: Vec<usize> = self.pieces().iter().enumerate()
+            .filter(|&(i, &point)| point == Point::Empty)
+            .map(|(i, _)| i)
+            .collect();
+
+
+        // get all positions from active player
+        /*match phase {
+            GamePhase::Moving => {
+                pieces_iter()
+                    .filter(|(_, &p)| p == Point::Occupied(player))
+                    .flat_map(move |(from, _)| {
+                        ADJACENT[from].iter()
+                            .copied()
+                            .filter(move |&to| self.get_piece_at_position(to) == Point::Empty)
+                            .flat_map(move |to| {
+                                //if self.is_mill_closed(to as u8, player) {
+                                //    no_mill_stones_from_enemy.iter().copied()
+                                //        .map(move |k| Move::MOVE { from_position: from as u8, to_position: to as u8, kill: Some(k) })
+                                //        .chain(once(Move::MOVE { from_position: from as u8, to_position: to as u8, kill: None }))
+                                //} //else {
+                                    //once(Move::MOVE { from_position: from as u8, to_position: to as u8, kill: None })
+                                //}
+                            })
+                    })
+            },
+
+            GamePhase::Flying => {
+                pieces_iter()
+                    .filter(|(_, &p)| p == Point::Occupied(player))
+                    .flat_map(move |(from, _)| {
+                        empty_points.iter().copied().flat_map(move |to| {
+                            /*if self.is_mill_closed(to as u8, player) {
+                                no_mill_stones_from_enemy.iter().copied()
+                                    .map(move |k| Move::FLY { from_position: from as u8, to_position: to as u8, kill: Some(k) })
+                                    .chain(once(Move::FLY { from_position: from as u8, to_position: to as u8, kill: None }))
+                            } else {
+                                //once(Move::FLY { from_position: from as u8, to_position: to as u8, kill: None })
+                            }*/
+                        })
+                    })
+            },
+
+            GamePhase::Placing => {
+                pieces_iter()
+                    .filter(|(_, &p)| p == Point::Empty)
+                    .flat_map(move |(pos, _)| {
+                        /*if self.is_mill_closed(pos as u8, player) {
+                            no_mill_stones_from_enemy.iter().copied()
+                                .map(move |k| Move::PLACE { position: pos as u8, kill: Some(k) })
+                                .chain(once(Move::PLACE { position: pos as u8, kill: None }))
+                        } else {
+                            //once(Move::PLACE { position: pos as u8, kill: None })
+                        }*/
+                    })
+            }
+        }*/
+        std::iter::empty()
+
+    }
+
+    fn get_pieces_on_board_for_player(&self, player: Player) -> u8 {
+        let mut count = 0;
+        for i in 0..self.pieces.len() {
+            if let Point::Occupied(p) = self.get_piece_at_position(i as u8) {
+                if player == p {
+                    count += 1;
+                }
+            }
+        }
+
+        count
     }
 
     fn is_index_valid(index: u8) -> bool {
@@ -243,32 +379,94 @@ impl Position {
         self.pieces
     }
 
+    pub fn set_active_player(&mut self, active_player: Player) {
+        self.active_player = active_player;
+    }
+
     pub fn active_player(&self) -> Player {
         self.active_player
     }
-}
 
-#[derive(Debug)]
-pub enum MoveAction {
-    PLACE { position: u8 },
-    MOVE { from_position: u8, to_position: u8 },
-    FLY { from_position: u8, to_position: u8 }
-}
+    pub fn set_pieces_to_place(&mut self, pieces_to_place: (u8, u8)) {
+        self.pieces_to_place = pieces_to_place;
+    }
 
-#[derive(Debug)]
-pub struct Move {
-    action: MoveAction
-}
-
-impl Move {
-    pub fn new(move_action: MoveAction) -> Self {
-        Move {
-            action: move_action
-        }
+    pub fn pieces_to_place(&self) -> (u8, u8) {
+        self.pieces_to_place
     }
 }
 
-pub fn calculate_next_position(position: &mut Position, move_action: &Move) -> Option<Position> {
+impl FromStr for Position {
+    type Err = Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.is_empty() {
+            panic!("String is empty");
+        }
+
+        let mut chars = s.chars();
+        let player_char = chars.next().unwrap();
+
+        let player = match player_char {
+            'W' => Player::White,
+            'B' => Player::Black,
+            _ => panic!("Invalid format")
+        };
+
+        match chars.next() {
+            Some('-') => (),
+            _ => panic!("Invalid format")
+        }
+
+        let x: String = chars.collect();
+        if x.len() != 24 {
+            panic!("Invalid format");
+        }
+
+        let mut position = Position::new(player, );
+        for (index, char) in x.chars().enumerate() {
+            match char {
+                'E' => {position.set_piece_at_position(index as u8, Point::Empty); ()},
+                'W' =>  {position.set_piece_at_position(index as u8, Point::Occupied(Player::White)); ()},
+                'B' => {position.set_piece_at_position(index as u8, Point::Occupied(Player::Black)); ()},
+                _ => panic!("Invalid format")
+            }
+        }
+        position.set_active_player(player);
+
+        Ok(position)
+    }
+}
+
+impl Display for Position {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        let mut position_string = String::new();
+        let active_player = self.active_player();
+        position_string.push_str(if active_player == Player::White {"W"} else {"B"});
+
+        let mut active_positions: Vec<u8> = Vec::new();
+        for (i, &piece) in self.pieces().iter().enumerate() {
+            match piece {
+                Point::Occupied(player) => {
+                    if active_player == player {
+                        active_positions.push(i as u8);
+                    }
+                    position_string.push_str(
+                        if player == Player::White { "W" } else { "B" }
+                    )
+                },
+                _ => position_string.push_str("E")
+            };
+        }
+        f.write_str(position_string.as_str())?;
+        f.write_char('\n')?;
+
+        todo!();
+        Ok(())
+    }
+}
+
+pub fn calculate_next_position(position: &mut Position, move_action: Move) -> Option<Position> {
     if !position.is_move_valid(move_action) {
         return None;
     }
@@ -279,4 +477,3 @@ pub fn calculate_next_position(position: &mut Position, move_action: &Move) -> O
 
     Some(position_clone)
 }
-

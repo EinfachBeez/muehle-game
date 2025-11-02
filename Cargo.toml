@@ -6,3 +6,7 @@ authors = ["Felix"]
 
 [dependencies]
 log = "0.4.28"
+
+[[bin]]
+name = "enumerate_moves"
+path = "src/bin/enumerate_moves.rs"
