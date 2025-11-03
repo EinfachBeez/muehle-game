@@ -1,7 +1,6 @@
 use log::warn;
 use std::fmt::{Display, Formatter, Write};
 use std::io::Error;
-use std::iter::{once, Map};
 use std::str::{FromStr};
 
 const MILLS: [[u8;3]; 16] = [
@@ -77,13 +76,6 @@ pub enum Point {
     Occupied(Player)
 }
 
-#[derive(Clone, Copy, Debug)]
-pub enum Move {
-    PLACE { position: u8, kill: Option<u8> }, // todo!() hier kann man auch killen
-    MOVE { from_position: u8, to_position: u8, kill: Option<u8> },
-    FLY { from_position: u8, to_position: u8, kill: Option<u8>} // todo!() vllt. rausnehmen und 1. Move
-}
-
 impl Point {
     fn is_occupied(&self) -> bool {
         match self {
@@ -93,10 +85,41 @@ impl Point {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
 pub enum GamePhase {
     Placing,
     Moving,
     Flying
+}
+
+#[derive(Clone, Copy, Debug)]
+pub enum Move {
+    PLACE { position: u8, kill: Option<u8> },
+    MOVE { from_position: u8, to_position: u8, kill: Option<u8> }
+}
+
+impl Display for Move {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Move::PLACE { position, kill } => {
+                let mut format = format!("P {}", position);
+                if kill.is_some() {
+                    format.push_str(" T ");
+                    format.push_str(kill.unwrap().to_string().as_str());
+                }
+                write!(f, "{}", format)
+            }
+            Move::MOVE { from_position, to_position, kill } => {
+                let mut format = format!("M {} {}", from_position, to_position);
+                if kill.is_some() {
+                    format.push_str(" T ");
+                    format.push_str(kill.unwrap().to_string().as_str());
+                }
+                write!(f, "{}", format)
+            }
+        }
+
+    }
 }
 
 #[derive(Clone)]
@@ -140,65 +163,87 @@ impl Position {
         old_piece
     }
 
-    pub fn is_move_valid(&self, move_action: Move) -> bool {
-        match move_action {
-            Move::PLACE {position, kill} => {
-                if !Self::is_index_valid(position) {
-                    return false;
-                }
-                if self.get_piece_at_position(position).is_occupied() {
-                    return false;
-                }
-                true
-            },
-            Move::MOVE {from_position, to_position, kill} => {
-                if !Self::is_index_valid(from_position) && !Self::is_index_valid(to_position) {
-                    return false;
-                }
-                if let Point::Occupied(player) = self.get_piece_at_position(from_position) {
-                    if player != self.active_player {
-                        return false;
+    pub fn is_move_valid(&self, game_phase: GamePhase, move_action: Move) -> bool {
+        // TODO: Check if kill is allowed
+        match game_phase {
+            GamePhase::Placing => {
+                match move_action {
+                    Move::PLACE { position, kill } => {
+                        if !Self::is_index_valid(position) {
+                            return false;
+                        }
+                        if self.get_piece_at_position(position).is_occupied() {
+                            return false;
+                        }
+                        true
                     }
+                    _ => false
                 }
-                if !Self::is_move_adjacent(from_position, to_position) {
-                    return false;
-                }
-
-                true
             },
-            Move::FLY {from_position, to_position, kill} => {
-                if !Self::is_index_valid(from_position) && !Self::is_index_valid(to_position) {
-                    return false;
-                }
-                if let Point::Occupied(player) = self.get_piece_at_position(from_position) {
-                    if player != self.active_player {
-                        return false;
+            GamePhase::Moving => {
+                match move_action {
+                    Move::MOVE { from_position, to_position, kill } => {
+                        if !Self::is_index_valid(from_position) && !Self::is_index_valid(to_position) {
+                            return false;
+                        }
+                        if let Point::Occupied(player) = self.get_piece_at_position(from_position) {
+                            if player != self.active_player {
+                                return false;
+                            }
+                        }
+                        if !Self::is_move_adjacent(from_position, to_position) {
+                            return false;
+                        }
+
+                        true
                     }
+                    _ => false
                 }
-                if self.get_piece_at_position(to_position).is_occupied() {
-                    return false;
-                }
-
-                true
             },
+            GamePhase::Flying => {
+                match move_action {
+                    Move::MOVE { from_position, to_position, kill } => {
+                        if !Self::is_index_valid(from_position) && !Self::is_index_valid(to_position) {
+                            return false;
+                        }
+                        if let Point::Occupied(player) = self.get_piece_at_position(from_position) {
+                            if player != self.active_player {
+                                return false;
+                            }
+                        }
+                        if self.get_piece_at_position(to_position).is_occupied() {
+                            return false;
+                        }
+
+                        true
+                    }
+                    _ => false
+                }
+            }
         }
     }
 
-    pub fn change_piece_position(&mut self, move_action: Move) {
-        if !self.is_move_valid(move_action) {
+    pub fn change_piece_position(&mut self, game_phase: GamePhase, move_action: Move) {
+        if !self.is_move_valid(game_phase, move_action) {
             warn!("Invalid move {move_action:?}");
             return;
         }
         match move_action {
             Move::PLACE {position, kill} => {
                 self.set_piece_at_position(position, Point::Occupied(self.active_player));
+
+                if kill.is_some() {
+                    self.set_piece_at_position(kill.unwrap(), Point::Empty);
+                }
             }
-            Move::MOVE {from_position, to_position, kill} |
-            Move::FLY {from_position, to_position, kill} => {
+            Move::MOVE {from_position, to_position, kill} => {
                 let point = self.get_piece_at_position(from_position);
                 self.set_piece_at_position(from_position, Point::Empty);
                 self.set_piece_at_position(to_position, point);
 
+                if kill.is_some() {
+                    self.set_piece_at_position(kill.unwrap(), Point::Empty);
+                }
             }
         }
     }
@@ -233,7 +278,7 @@ impl Position {
 
     pub fn list_possible_pieces_to_remove(&self, player: Player) -> Vec<u8> {
         self.pieces.iter().enumerate()
-            .filter(|&(i, &p)| {
+            .filter(move |&(i, &p)| {
                 p == Point::Occupied(player) && !self.is_mill_closed(i as u8, player)
             })
             .map(|(i, _)| i as u8)
@@ -253,6 +298,10 @@ impl Position {
                 false
             }
         }
+    }
+
+    pub fn is_kill_possible(&self, piece: u8) -> bool {
+        self.is_mill_closed(piece, self.active_player.opposite())
     }
 
     fn is_mill_closed(&self, new_pos: u8, player: Player) -> bool {
@@ -294,13 +343,28 @@ impl Position {
         let player = self.active_player;
         let phase = self.get_game_phase_for_player(self.active_player);
 
-        // list possible kills
-        let no_mill_stones_from_enemy = self.list_possible_pieces_to_remove(player.opposite());
+        let _ = match phase {
+            GamePhase::Placing => {
+                let placement_iter = (0..PIECE_COUNT)
+                    .filter(move |&x| !self.get_piece_at_position(x as u8).is_occupied());
 
-        let empty_points: Vec<usize> = self.pieces().iter().enumerate()
-            .filter(|&(i, &point)| point == Point::Empty)
-            .map(|(i, _)| i)
-            .collect();
+                placement_iter.flat_map(move |pos| {
+                    if self.is_mill_closed(pos as u8, player) {
+                        (0..PIECE_COUNT)
+                            .filter(move |&x| self.is_kill_possible(pos as u8))
+                            .map(move |kill| {
+                                Move::PLACE { position: pos as u8, kill: Some(kill as u8) }
+                            })
+                    } else {
+                        Move::PLACE { position: pos as u8, kill: None }
+                    }
+                })
+            }
+            GamePhase::Moving => {}
+            GamePhase::Flying => {}
+        };
+
+
 
 
         // get all positions from active player
@@ -460,6 +524,10 @@ impl Display for Position {
         }
         f.write_str(position_string.as_str())?;
         f.write_char('\n')?;
+
+        for x in self.enumerate_moves() {
+
+        }
 
         todo!();
         Ok(())
