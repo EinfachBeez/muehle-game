@@ -1,13 +1,14 @@
 #[cfg(test)]
 mod tests {
-    use muehle_game::{calculate_next_position, Move, Player, Position};
+    use std::str::FromStr;
+    use muehle_game::{calculate_next_position, GamePhase, Move, Player, Position};
     use muehle_game::Point::Occupied;
 
     #[test]
     fn test_set_and_get() {
         let mut pos = Position::new(Player::White);
         let m = Move::PLACE {position: 3, kill: None};
-        pos.change_piece_position(m);
+        pos.change_piece_position(GamePhase::Placing, m);
         assert_eq!(pos.get_piece_at_position(3), Occupied(Player::White));
         print_board(&pos)
     }
@@ -16,10 +17,10 @@ mod tests {
     fn test_move() {
         let mut pos = Position::new(Player::White);
         let m = Move::PLACE {position: 23, kill: None};
-        let mut pos1 = calculate_next_position(&mut pos, m).unwrap();
+        let mut pos1 = calculate_next_position(&mut pos, GamePhase::Placing, m).unwrap();
         print_board(&pos1);
         let m = Move::MOVE {from_position: 23, to_position: 3, kill: None};
-        let pos2 = calculate_next_position(&mut pos1, m).unwrap();
+        let pos2 = calculate_next_position(&mut pos1, GamePhase::Placing, m).unwrap();
         print_board(&pos2);
         assert_eq!(pos2.get_piece_at_position(3), Occupied(Player::White));
     }
@@ -28,26 +29,42 @@ mod tests {
     fn test_adjacent() {
         let mut pos = Position::new(Player::White);
         let place_piece = Move::PLACE {position: 9, kill: None};
-        pos.change_piece_position(place_piece);
+        pos.change_piece_position(GamePhase::Placing, place_piece);
         let move_piece = Move::MOVE {from_position: 9, to_position: 16, kill: None};
-        let x = pos.is_move_valid(move_piece);
+        let x = pos.is_move_valid(GamePhase::Placing,move_piece);
         assert_eq!(true, x);
 
         let move_piece = Move::MOVE {from_position: 8, to_position: 0, kill: None};
-        let x = pos.is_move_valid(move_piece);
+        let x = pos.is_move_valid(GamePhase::Placing,move_piece);
         assert_eq!(true, x);
 
         let move_piece = Move::MOVE {from_position: 0, to_position: 7, kill: None};
-        let x = pos.is_move_valid(move_piece);
+        let x = pos.is_move_valid(GamePhase::Placing,move_piece);
         assert_eq!(true, x);
 
         let move_piece = Move::MOVE {from_position: 7, to_position: 5, kill: None};
-        let x = pos.is_move_valid(move_piece);
+        let x = pos.is_move_valid(GamePhase::Placing,move_piece);
         assert_eq!(false, x);
 
         let move_piece = Move::MOVE {from_position: 7, to_position: 6, kill: None};
-        let x = pos.is_move_valid(move_piece);
+        let x = pos.is_move_valid(GamePhase::Placing,move_piece);
         assert_eq!(true, x);
+    }
+
+    #[test]
+    fn test_input() {
+        let input = "W-WWBEEEEWEWBBBEWWBWWBBEBE";
+        let result = Position::from_str(input);
+        match result {
+            Ok(mut position) => {
+                position.set_pieces_to_place((0, 0));
+                let x1 = position.enumerate_moves();
+                for x in x1 {
+                    println!("{x}")
+                }
+            }
+            _ => panic!("Err")
+        }
     }
 
 

@@ -1,10 +1,10 @@
 use std::fs::{File};
 use std::io::{BufRead, BufReader, Error};
 use std::str::FromStr;
-use muehle_game::{Move, Position};
+use muehle_game::{Position};
 
-const INPUT_PATH: &str = "data/input_ex3.txt";
-const OUTPUT_PATH: &str = "data/input_ex3.txt";
+const INPUT_PATH: &str = "src/data/input_ex3.txt";
+const OUTPUT_PATH: &str = "src/data/input_ex3.txt";
 
 fn main() -> Result<(), Error>{
 
@@ -18,32 +18,19 @@ fn main() -> Result<(), Error>{
     for line in buffered_in.lines() {
         let line_content = buffered_out.next().unwrap().expect("Failed to read line");
         match line {
-            Ok(string) => {
-                if string.eq(&line_content) {
-                   println!("Correct")
+            Ok(input_position) => {
+                if !input_position.eq(&line_content) {
+                   panic!("Err")
                 }
-                let result = Position::from_str(string.as_str());
+                println!("{input_position}");
+                let result = Position::from_str(input_position.as_str());
                 match result {
-                    Ok(position) => {
+                    Ok(mut position) => {
+                        position.set_pieces_to_place((0, 0));
                         let x = position.enumerate_moves();
 
                         for move_action in x {
-                            match move_action {
-                                Move::MOVE {from_position, to_position, kill} |
-                                Move::FLY {from_position, to_position, kill} => {
-                                    let possible_move = buffered_out.next().unwrap().expect("TODO: panic message");
-                                    let mut format = format!("M {from_position} {to_position} ");
-                                    if kill.is_some() {
-                                        format.push_str("T ");
-                                        format.push_str(kill.unwrap().to_string().as_str());
-                                    }
-
-                                    if !possible_move.eq(&format) {
-                                        println!("Uff");
-                                    }
-                                }
-                                _ => continue
-                            }
+                            println!("{move_action}");
                         }
                     }
                     _ => panic!("Err")

@@ -5,6 +5,7 @@ edition = "2024"
 authors = ["Felix"]
 
 [dependencies]
+either = "1.15.0"
 log = "0.4.28"
 
 [[bin]]
