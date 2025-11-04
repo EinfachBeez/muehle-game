@@ -1,14 +1,13 @@
 use std::fs::{File};
 use std::io::{BufRead, BufReader, Error};
 use std::str::FromStr;
-use muehle_game::{Position};
+use muehle_game::{Move, Position};
 
 const INPUT_PATH: &str = "src/data/input_ex3.txt";
 const OUTPUT_PATH: &str = "src/data/input_ex3.txt";
 
 fn main() -> Result<(), Error>{
 
-    // lese file
     let input = File::open(INPUT_PATH)?;
     let buffered_in = BufReader::new(input);
 
@@ -29,7 +28,10 @@ fn main() -> Result<(), Error>{
                         position.set_pieces_to_place((0, 0));
                         let x = position.enumerate_moves();
 
-                        for move_action in x {
+                        let mut collected_moves: Vec<Move> = x.collect();
+                        collected_moves.sort_by(move |x1, x2| x1.to_string().cmp(&x2.to_string()));
+
+                        for move_action in collected_moves {
                             println!("{move_action}");
                         }
                     }
@@ -41,13 +43,6 @@ fn main() -> Result<(), Error>{
     }
 
 
-
-
     Ok(())
-
-    // werfe das aus der hilfsdinger aus der lib rein
-
-    //
-
 
 }
