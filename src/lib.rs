@@ -38,7 +38,7 @@ const ADJACENT: [&[u8]; PIECE_COUNT] = [
     &[4, 6],
     &[5, 7, 14],
     &[6, 0],
-    &[0, 9, 15],
+    &[0, 9, 15, 16],
     &[8, 10],
     &[2, 9, 11, 18],
     &[10, 12],
@@ -345,7 +345,7 @@ impl Position {
                 if self.pieces_to_place.0 != 0 {
                     return GamePhase::Placing
                 }
-                let pieces_on_board = self.get_piece_count_for_player(Player::White);
+                let pieces_on_board = self.get_piece_count_for_player(player);
                 if pieces_on_board <= 3 {
                     return GamePhase::Flying;
                 }
@@ -354,7 +354,7 @@ impl Position {
                 if self.pieces_to_place.1 != 0 {
                     return GamePhase::Placing
                 }
-                let pieces_on_board = self.get_piece_count_for_player(Player::Black);
+                let pieces_on_board = self.get_piece_count_for_player(player);
                 if pieces_on_board <= 3 {
                     return GamePhase::Flying
                 }

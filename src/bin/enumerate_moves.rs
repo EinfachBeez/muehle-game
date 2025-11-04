@@ -4,7 +4,7 @@ use std::str::FromStr;
 use muehle_game::{Move, Position};
 
 const INPUT_PATH: &str = "src/data/input_ex3.txt";
-const OUTPUT_PATH: &str = "src/data/input_ex3.txt";
+const OUTPUT_PATH: &str = "src/data/output_ex3.txt";
 
 fn main() -> Result<(), Error>{
 
@@ -19,7 +19,9 @@ fn main() -> Result<(), Error>{
         match line {
             Ok(input_position) => {
                 if !input_position.eq(&line_content) {
-                   panic!("Err")
+                    println!("{} == {}", input_position, line_content);
+                    println!("{}", buffered_out.next().unwrap().expect("Failed to read line"));
+                    break;
                 }
                 println!("{input_position}");
                 let result = Position::from_str(input_position.as_str());
@@ -33,6 +35,12 @@ fn main() -> Result<(), Error>{
 
                         for move_action in collected_moves {
                             println!("{move_action}");
+
+                            let string = buffered_out.next().unwrap().expect("Failed to read line");
+                            if !move_action.to_string().eq(&string) {
+                                println!("Error: Not an equal move. Is: {move_action}, Should: {string}");
+                                break;
+                            }
                         }
                     }
                     _ => panic!("Err")
