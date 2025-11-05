@@ -176,7 +176,6 @@ impl Position {
     }
 
     pub fn is_move_valid(&self, game_phase: GamePhase, move_action: Move) -> bool {
-        // TODO: Check if kill is allowed
         match game_phase {
             GamePhase::Placing => {
                 match move_action {
@@ -339,7 +338,7 @@ impl Position {
         false
     }
 
-    fn get_game_phase_for_player(&self, player: Player) -> GamePhase {
+    pub fn get_game_phase_for_player(&self, player: Player) -> GamePhase {
         match player {
             Player::White => {
                 if self.pieces_to_place.0 != 0 {
@@ -434,13 +433,13 @@ impl Position {
 
     }
 
-    fn get_pieces_for_player(&self, player: Player) -> impl Iterator<Item = u8> {
+    pub fn get_pieces_for_player(&self, player: Player) -> impl Iterator<Item = u8> {
         (0..PIECE_COUNT)
             .filter(move |&points| self.get_piece_at_position(points as u8).is_occupied_by_player(player))
             .map(move |x| x as u8)
     }
 
-    fn get_piece_count_for_player(&self, player: Player) -> u8 {
+    pub fn get_piece_count_for_player(&self, player: Player) -> u8 {
         let mut count = 0;
         for i in 0..self.pieces.len() {
             if let Point::Occupied(p) = self.get_piece_at_position(i as u8) {
