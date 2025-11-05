@@ -1,29 +1,28 @@
-use std::fs::{File};
-use std::io::{BufRead, BufReader, Error};
+use std::fs::{write, File};
+use std::io::{BufRead, BufReader, BufWriter, Error, Write};
+use std::process::exit;
 use std::str::FromStr;
 use muehle_game::{Move, Position};
 
-const INPUT_PATH: &str = "src/data/input_ex3.txt";
-const OUTPUT_PATH: &str = "src/data/output_ex3.txt";
+fn main() -> Result<(), Error> {
+    let args: Vec<String> = std::env::args().collect();
 
-fn main() -> Result<(), Error>{
+    if args.len() != 3 {
+        eprintln!("Syntax: cargo run --bin enumerate_moves -- <Input_file.txt> <Output_file.txt>");
+        exit(1);
+    }
 
-    let input = File::open(INPUT_PATH)?;
+    let input = &args[1];
+    let output = &args[2];
+
+    let input = File::open(input)?;
+    let output = File::create(output)?;
     let buffered_in = BufReader::new(input);
-
-    let output = File::open(OUTPUT_PATH)?;
-    let mut buffered_out = BufReader::new(output).lines();
+    let mut buffered_out = BufWriter::new(output);
 
     for line in buffered_in.lines() {
-        let line_content = buffered_out.next().unwrap().expect("Failed to read line");
         match line {
             Ok(input_position) => {
-                if !input_position.eq(&line_content) {
-                    println!("{} == {}", input_position, line_content);
-                    println!("{}", buffered_out.next().unwrap().expect("Failed to read line"));
-                    break;
-                }
-                println!("{input_position}");
                 let result = Position::from_str(input_position.as_str());
                 match result {
                     Ok(mut position) => {
@@ -33,15 +32,12 @@ fn main() -> Result<(), Error>{
                         let mut collected_moves: Vec<Move> = x.collect();
                         collected_moves.sort_by(move |x1, x2| x1.to_string().cmp(&x2.to_string()));
 
-                        for move_action in collected_moves {
-                            println!("{move_action}");
+                        writeln!(buffered_out, "{}", input_position)?;
 
-                            let string = buffered_out.next().unwrap().expect("Failed to read line");
-                            if !move_action.to_string().eq(&string) {
-                                println!("Error: Not an equal move. Is: {move_action}, Should: {string}");
-                                break;
-                            }
+                        for move_action in collected_moves {
+                            writeln!(buffered_out, "{}", move_action)?;
                         }
+
                     }
                     _ => panic!("Err")
                 }
@@ -50,7 +46,8 @@ fn main() -> Result<(), Error>{
         }
     }
 
-
+    buffered_out.flush()?;
+    println!("Finished!");
     Ok(())
 
 }
