@@ -1,3 +1,4 @@
+use std::f32::consts::PI;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use ggez::conf::{WindowMode, WindowSetup};
 use ggez::glam::Vec2;
@@ -32,6 +33,7 @@ enum GuiPhase {
     Finished
 }
 
+#[derive(Copy, Clone, Debug)]
 enum Action {
     Choose,
     Move(u8),
@@ -216,7 +218,7 @@ impl event::EventHandler for State {
         draw_information(self, _ctx, &mut canvas);
         draw_position(self, &mut canvas);
 
-
+        draw_current_action(self, _ctx, &mut canvas);
         draw_timer(self, _ctx, &mut canvas);
         canvas.finish(_ctx)?;
         Ok(())
@@ -228,7 +230,10 @@ impl event::EventHandler for State {
                 let option = self.piece_at(_x, _y);
                 match option {
                     Some(i) => {
-                        println!("{i}");
+                        println!("{:?}", self.current_action);
+                        if self.gui_phase != GuiPhase::Active {
+                            self.start_game();
+                        }
                         self.handle_piece_action(_ctx, i);
                     }
                     None => ()
@@ -243,11 +248,6 @@ impl event::EventHandler for State {
 
     fn key_down_event(&mut self, _ctx: &mut Context, input: KeyInput, _repeated: bool) -> Result<(), GameError> {
         match input.keycode {
-            Some(KeyCode::Space) => {
-                if self.gui_phase != GuiPhase::Active {
-                    self.start_game();
-                }
-            }
             Some(KeyCode::X) => {
                 if self.gui_phase == GuiPhase::Active {
                     self.stop_game();
@@ -295,6 +295,81 @@ fn draw_position(state: &State, canvas: &mut Canvas) {
             }
             _ => continue
         }
+    }
+}
+
+fn draw_current_action(state: &State, ctx: &mut Context, canvas: &mut Canvas) {
+    let action = state.current_action;
+
+    fn draw_visual(ctx: &mut Context, canvas: &mut Canvas, center: Point2<f32>, color: Color) {
+        draw_dashed_circle(
+            ctx,
+            canvas,
+            center,
+            50.0,
+            5.0,
+            10.0,
+            10.0,3,
+            color
+        );
+    }
+
+    match action {
+        Action::Move(direction) => {
+            let (x, y) = state.board[direction as usize];
+            draw_visual(ctx, canvas, Point2 { x, y }, Color::WHITE);
+        }
+        Action::Kill(from, to) => {
+            let (x_from, y_from) = state.board[from as usize];
+            draw_visual(ctx, canvas, Point2 { x: x_from, y: y_from }, Color::WHITE);
+
+            if let Some(to_pos) = to {
+                let (x_to, y_to) = state.board[to_pos as usize];
+                draw_visual(ctx, canvas, Point2 { x: x_to, y: y_to }, Color::GREEN);
+            }
+        }
+        _ => ()
+    };
+}
+
+// Function generated with AI
+fn draw_dashed_circle(
+    ctx: &mut Context,
+    canvas: &mut Canvas,
+    center: Point2<f32>,
+    radius: f32,
+    stroke_width: f32,
+    dash_length: f32, // arc length in pixels for dash
+    gap_length: f32,  // arc length in pixels for gap
+    samples_per_dash: usize,
+    color: Color,
+) {
+    // convert arc-length to angle (radians): angle = length / radius
+    let dash_angle = dash_length / radius;
+    let gap_angle = gap_length / radius;
+
+    let mut angle = 0.0_f32;
+    while angle < 2.0 * PI - 1e-6 {
+        let start = angle;
+        let end = (angle + dash_angle).min(2.0 * PI);
+
+        // sample points along this arc segment
+        let mut pts: Vec<Point2<f32>> = Vec::with_capacity(samples_per_dash + 1);
+        for i in 0..=samples_per_dash {
+            let t = i as f32 / samples_per_dash as f32;
+            let theta = start + (end - start) * t;
+            let x = center.x + radius * theta.cos();
+            let y = center.y + radius * theta.sin();
+            pts.push(Point2 { x, y });
+        }
+
+        // draw the dash as a line mesh (if at least 2 points)
+        if pts.len() >= 2 {
+            let mesh = Mesh::new_line(ctx, &pts, stroke_width, color).unwrap();
+            canvas.draw(&mesh, DrawParam::default());
+        }
+
+        angle += dash_angle + gap_angle;
     }
 }
 
