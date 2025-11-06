@@ -1,6 +1,5 @@
 use log::warn;
-use std::fmt::{Display, Formatter};
-use std::io::Error;
+use std::fmt::{Debug, Display, Error, Formatter};
 use std::iter::once;
 use std::str;
 use std::str::{FromStr};
@@ -73,6 +72,15 @@ impl Player {
     }
 }
 
+impl Display for Player {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Player::White => write!(f, "White"),
+            Player::Black => write!(f, "Black")
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Point {
     Empty,
@@ -102,6 +110,16 @@ pub enum GamePhase {
     Flying
 }
 
+impl Display for GamePhase {
+    fn fmt(&self, f: &mut Formatter) ->  std::fmt::Result  {
+        match self {
+            GamePhase::Placing => write!(f, "Placing"),
+            GamePhase::Moving => write!(f, "Moving"),
+            GamePhase::Flying => write!(f, "Flying"),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug)]
 pub enum Move {
     PLACE { position: u8, kill: Option<u8> },
@@ -113,18 +131,18 @@ impl Display for Move {
         match self {
             Move::PLACE { position, kill } => {
                 let mut format = format!("P {}", position + 1);
-                if kill.is_some() {
+                if let Some(kill_pos) = kill {
                     format.push_str(" T ");
-                    let kill_value = kill.unwrap() + 1;
+                    let kill_value = kill_pos + 1;
                     format.push_str(kill_value.to_string().as_str());
                 }
                 write!(f, "{}", format)
             }
             Move::MOVE { from_position, to_position, kill } => {
                 let mut format = format!("M {} {}", from_position + 1, to_position + 1);
-                if kill.is_some() {
+                if let Some(kill_pos) = kill {
                     format.push_str(" T ");
-                    let kill_value = kill.unwrap() + 1;
+                    let kill_value = kill_pos + 1;
                     format.push_str(kill_value.to_string().as_str());
                 }
                 write!(f, "{}", format)
@@ -186,8 +204,8 @@ impl Position {
                         if self.get_piece_at_position(position).is_occupied() {
                             return false;
                         }
-                        if kill.is_some() {
-                            return self.is_piece_removal_possible(None, kill.unwrap())
+                        if let Some(pos) = kill {
+                            return self.is_piece_removal_possible(None, pos)
                         }
                         true
                     }
@@ -208,8 +226,8 @@ impl Position {
                         if !Self::is_move_adjacent(from_position, to_position) {
                             return false;
                         }
-                        if kill.is_some() {
-                            return self.is_piece_removal_possible(Some(from_position), kill.unwrap())
+                        if let Some(pos) = kill {
+                            return self.is_piece_removal_possible(Some(from_position), pos)
                         }
 
                         true
@@ -231,8 +249,8 @@ impl Position {
                         if self.get_piece_at_position(to_position).is_occupied() {
                             return false;
                         }
-                        if kill.is_some() {
-                            return self.is_piece_removal_possible(Some(from_position), kill.unwrap())
+                        if let Some(pos) = kill {
+                            return self.is_piece_removal_possible(Some(from_position), pos)
                         }
 
                         true
@@ -252,8 +270,8 @@ impl Position {
             Move::PLACE {position, kill} => {
                 self.set_piece_at_position(position, Point::Occupied(self.active_player));
 
-                if kill.is_some() {
-                    self.set_piece_at_position(kill.unwrap(), Point::Empty);
+                if let Some(pos) = kill {
+                    self.set_piece_at_position(pos, Point::Empty);
                 }
             }
             Move::MOVE {from_position, to_position, kill} => {
@@ -261,8 +279,8 @@ impl Position {
                 self.set_piece_at_position(from_position, Point::Empty);
                 self.set_piece_at_position(to_position, point);
 
-                if kill.is_some() {
-                    self.set_piece_at_position(kill.unwrap(), Point::Empty);
+                if let Some(pos) = kill {
+                    self.set_piece_at_position(pos, Point::Empty);
                 }
             }
         }
@@ -325,8 +343,8 @@ impl Position {
                             return true;
                         }
                         let mut is_old_position_in_array = false;
-                        if old_position.is_some() {
-                            is_old_position_in_array = old_position.unwrap() == i;
+                        if let Some(pos) = old_position {
+                            is_old_position_in_array = pos == i;
                         }
                         !is_old_position_in_array && self.get_piece_at_position(i) == Point::Occupied(player)
                     }
@@ -336,6 +354,10 @@ impl Position {
             }
         }
         false
+    }
+
+    pub fn get_game_phase_for_current_player(&self) -> GamePhase {
+        self.get_game_phase_for_player(self.active_player)
     }
 
     pub fn get_game_phase_for_player(&self, player: Player) -> GamePhase {
@@ -472,6 +494,21 @@ impl Position {
         self.pieces_to_place = pieces_to_place;
     }
 
+    pub fn set_pieces_to_place_for_player(&mut self, player: Player, pieces_to_place: u8) {
+        match player {
+            Player::White => self.pieces_to_place.0 = pieces_to_place,
+            Player::Black => self.pieces_to_place.1 = pieces_to_place,
+        }
+
+    }
+
+    pub fn pieces_to_place_for_player(&self, player: Player) -> u8 {
+        match player {
+            Player::White => self.pieces_to_place.0,
+            Player::Black => self.pieces_to_place.1
+        }
+    }
+
     pub fn pieces_to_place(&self) -> (u8, u8) {
         self.pieces_to_place
     }
@@ -505,14 +542,24 @@ impl FromStr for Position {
         }
 
         let mut position = Position::new(player);
+        let (mut w, mut b) = (9, 9);
         for (index, char) in x.chars().enumerate() {
             match char {
                 'E' => {position.set_piece_at_position(index as u8, Point::Empty); ()},
-                'W' =>  {position.set_piece_at_position(index as u8, Point::Occupied(Player::White)); ()},
-                'B' => {position.set_piece_at_position(index as u8, Point::Occupied(Player::Black)); ()},
+                'W' =>  {
+                    position.set_piece_at_position(index as u8, Point::Occupied(Player::White));
+                    w -= 1;
+                    ()
+                },
+                'B' => {
+                    b -= 1;
+                    position.set_piece_at_position(index as u8, Point::Occupied(Player::Black));
+                    ()
+                },
                 _ => panic!("Invalid format")
             }
         }
+        position.set_pieces_to_place((w, b));
         position.set_active_player(player);
 
         Ok(position)
@@ -544,13 +591,22 @@ impl Display for Position {
     }
 }
 
-pub fn calculate_next_position(position: &mut Position, game_phase: GamePhase, move_action: Move) -> Option<Position> {
-    if !position.is_move_valid(game_phase, move_action) {
+pub fn calculate_next_position(position: &Position, move_action: Move) -> Option<Position> {
+    let active_player = position.active_player();
+    let phase = position.get_game_phase_for_player(active_player);
+    if !position.is_move_valid(phase, move_action) {
         return None;
     }
 
     let mut position_clone = position.clone();
-    position_clone.change_piece_position(game_phase, move_action);
+    position_clone.change_piece_position(phase, move_action);
+    match phase {
+        GamePhase::Placing => {
+            let i = position_clone.pieces_to_place_for_player(active_player);
+            position_clone.set_pieces_to_place_for_player(active_player, i-1);
+        }
+        _ => ()
+    }
     position_clone.switch_player();
 
     Some(position_clone)

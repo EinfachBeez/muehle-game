@@ -1,10 +1,12 @@
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use ggez::conf::{WindowMode, WindowSetup};
 use ggez::glam::Vec2;
 use ggez::graphics::{Canvas, Color, DrawMode, DrawParam, Drawable, Image, Mesh, PxScale, Rect, Text};
 use ggez::mint::Point2;
 use ggez::*;
+use ggez::event::{MouseButton};
 use ggez::input::keyboard::{KeyCode, KeyInput};
-use muehle_game::{Player, Position};
+use muehle_game::{calculate_next_position, GamePhase, Move, Player, Point, Position};
 
 // pixel size of a point
 const POINT_SIZE: f32 = 10.0;
@@ -21,21 +23,31 @@ const WHITE_STONES_PATH: &str = "/white_piece.png";
 const BLACK_PIECE_PATH: &str = "/black_piece.png";
 const BOARD_APP_IMAGE: &str = "/board_app_image.jpg";
 
+const FPS: u32 = 60;
+
 #[derive(Copy, Clone, Eq, PartialEq)]
 enum GuiPhase {
-    INITIAL,
-    ACTIVE,
-    FINISHED
+    Initial,
+    Active,
+    Finished
+}
+
+enum Action {
+    Choose,
+    Move(u8),
+    Kill(u8, Option<u8>) // kill is also possible in place phase
 }
 
 struct State {
     position: Position,
     board: [(f32, f32); 24],
     gui_phase: GuiPhase,
-    game_timer: u32,
+    game_timer: Option<Duration>,
 
     white_stone_image: Image,
-    black_stone_image: Image
+    black_stone_image: Image,
+
+    current_action: Action,
 }
 
 impl State {
@@ -44,27 +56,152 @@ impl State {
         State {
             position: default_position,
             board: generate_board(),
-            gui_phase: GuiPhase::INITIAL,
-            game_timer: 0,
+            gui_phase: GuiPhase::Initial,
+            game_timer: None,
             white_stone_image: Image::from_path(ctx, WHITE_STONES_PATH).unwrap(),
-            black_stone_image: Image::from_path(ctx, BLACK_PIECE_PATH).unwrap()
+            black_stone_image: Image::from_path(ctx, BLACK_PIECE_PATH).unwrap(),
+
+            current_action: Action::Choose
         }
     }
 
     fn start_game(&mut self) {
-        self.gui_phase = GuiPhase::ACTIVE;
+        self.gui_phase = GuiPhase::Active;
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap();
+        self.game_timer = Some(now);
     }
 
     fn stop_game(&mut self) {
-        self.gui_phase = GuiPhase::FINISHED;
+        self.gui_phase = GuiPhase::Finished;
+    }
+
+    fn elapsed_time_in_sec(&self) -> Option<u64> {
+        if let Some(start) = self.game_timer {
+            let now = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap();
+            let elapsed = now - start;
+            Some(elapsed.as_secs())
+        } else {
+            None
+        }
+    }
+
+    fn piece_at(&self, x: f32, y: f32) -> Option<u8> {
+        let radius = 35.0;
+        for (i, &(px, py)) in self.board.iter().enumerate() {
+            let dx = x - px;
+            let dy = y - py;
+            if dx*dx + dy*dy <= radius*radius {
+                return Some(i as u8);
+            }
+        }
+        None
+    }
+
+    fn handle_piece_action(&mut self, _ctx: &mut Context, piece_pos: u8) {
+        let current_position = &self.position;
+        let game_phase = current_position.get_game_phase_for_current_player();
+        match self.current_action {
+            Action::Choose => {
+                match game_phase {
+                    GamePhase::Placing => {
+                        if current_position.is_mill_closed(None, piece_pos, current_position.active_player()) {
+                            self.update_action(Action::Kill(piece_pos, None));
+                            return;
+                        }
+
+                        let move_action = Move::PLACE {position: piece_pos, kill: None};
+                        let result = Self::execute_action(current_position, move_action);
+                        match result {
+                            Some(position) => {
+                                self.update_position(position);
+                            }
+                            _ => return
+                        }
+                    }
+                    _ => self.update_action(Action::Move(piece_pos))
+                }
+            },
+            Action::Move(from) => {
+                match game_phase {
+                    GamePhase::Moving | GamePhase::Flying => {
+                        if self.position.is_mill_closed(Some(from), piece_pos, current_position.active_player()) {
+                            self.update_action(Action::Kill(from, Some(piece_pos)));
+                            return;
+                        }
+
+                        let move_action = Move::MOVE {from_position: from, to_position: piece_pos, kill: None};
+                        let result = Self::execute_action(current_position, move_action);
+                        match result {
+                            Some(position) => {
+                                self.update_position(position);
+                            }
+                            _ => return
+                        }
+                    }
+                    _ => self.update_action(Action::Kill(from, None))
+                }
+            },
+            Action::Kill(from, to, ) => {
+                match game_phase {
+                    GamePhase::Placing => {
+                        let move_action = Move::PLACE {position: from, kill: Some(piece_pos)};
+                        let result = Self::execute_action(current_position, move_action);
+                        match result {
+                            Some(position) => {
+                                self.update_position(position);
+                            }
+                            _ => return
+                        }
+                    }
+                    GamePhase::Moving | GamePhase::Flying => {
+                        if to.is_none() {
+                            return;
+                        }
+
+                        let move_action = Move::MOVE { from_position: from, to_position: to.unwrap(), kill: Some(piece_pos) };
+                        let result = Self::execute_action(current_position, move_action);
+                        match result {
+                            Some(position) => {
+                                self.update_position(position);
+                            }
+                            _ => return
+                        }
+                    }
+                }
+            },
+        }
+
+    }
+
+    fn execute_action(current_position: &Position, move_action: Move) -> Option<Position> {
+        calculate_next_position(current_position, move_action)
+    }
+
+    fn update_action(&mut self, action: Action) {
+        self.current_action = action;
+    }
+
+    fn update_position(&mut self, new_position: Position) {
+        self.position = new_position;
+        self.reset_action();
+    }
+
+    fn reset_action(&mut self) {
+        self.current_action = Action::Choose;
     }
 }
 
+
+
 impl event::EventHandler for State {
     fn update(&mut self, _ctx: &mut Context) -> Result<(), GameError> {
-        if self.gui_phase == GuiPhase::ACTIVE {
-            let elapsed = _ctx.time.time_since_start().as_secs_f32();
-            self.game_timer = elapsed.floor() as u32;
+        while _ctx.time.check_update_time(FPS) {
+            //TODO
         }
 
         Ok(())
@@ -76,24 +213,45 @@ impl event::EventHandler for State {
         draw_background(_ctx, &mut canvas);
         draw_board(self, _ctx, &mut canvas);
 
-        draw_player_information(self, _ctx, &mut canvas);
-        draw_player_information(self, _ctx, &mut canvas);
+        draw_information(self, _ctx, &mut canvas);
+        draw_position(self, &mut canvas);
 
-        draw_stone_on_board_for_player(self, &mut canvas, Player::White, self.game_timer);
-        draw_stone_on_board_for_player(self, &mut canvas, Player::Black, self.game_timer + 1);
 
         draw_timer(self, _ctx, &mut canvas);
         canvas.finish(_ctx)?;
         Ok(())
     }
 
-    fn key_down_event(&mut self, ctx: &mut Context, input: KeyInput, _repeated: bool) -> Result<(), GameError> {
+    fn mouse_button_down_event(&mut self, _ctx: &mut Context, _button: MouseButton, _x: f32, _y: f32) -> Result<(),   GameError> {
+        match _button {
+            MouseButton::Left => {
+                let option = self.piece_at(_x, _y);
+                match option {
+                    Some(i) => {
+                        println!("{i}");
+                        self.handle_piece_action(_ctx, i);
+                    }
+                    None => ()
+                }
+
+
+                Ok(())
+            }
+            _ => Ok(()),
+        }
+    }
+
+    fn key_down_event(&mut self, _ctx: &mut Context, input: KeyInput, _repeated: bool) -> Result<(), GameError> {
         match input.keycode {
             Some(KeyCode::Space) => {
-                self.start_game();
+                if self.gui_phase != GuiPhase::Active {
+                    self.start_game();
+                }
             }
             Some(KeyCode::X) => {
-                self.stop_game();
+                if self.gui_phase == GuiPhase::Active {
+                    self.stop_game();
+                }
             }
             _ => ()
         }
@@ -101,21 +259,22 @@ impl event::EventHandler for State {
     }
 }
 
-fn draw_timer(state: &mut State, ctx: &mut Context, canvas: &mut Canvas) {
+fn draw_timer(state: &State, ctx: &mut Context, canvas: &mut Canvas) {
+    let duration = state.elapsed_time_in_sec().unwrap_or(0);
     let mut timer_text;
-    let minutes = state.game_timer / 60;
-    let seconds = state.game_timer % 60;
+    let minutes = duration / 60;
+    let seconds = duration % 60;
     let mut param = DrawParam::default();
     match state.gui_phase {
-        GuiPhase::INITIAL => {
+        GuiPhase::Initial => {
             timer_text = Text::new("Timer stopped");
             param = param.color(Color::RED);
         }
-        GuiPhase::ACTIVE => {
+        GuiPhase::Active => {
             timer_text = Text::new(format!("Time elapsed: {:02}:{:02}", minutes, seconds));
             param = param.color(Color::WHITE);
         }
-        GuiPhase::FINISHED => {
+        GuiPhase::Finished => {
             timer_text = Text::new(format!("Time spent: {:02}:{:02}", minutes, seconds));
             param = param.color(Color::GREEN);
         }
@@ -126,54 +285,81 @@ fn draw_timer(state: &mut State, ctx: &mut Context, canvas: &mut Canvas) {
     canvas.draw(&timer_text, param.dest(dest));
 }
 
-fn draw_player_information(state: &mut State, ctx: &mut Context, canvas: &mut Canvas) {
-    let (white_pieces_to_place, black_pieces_to_place) = state.position.pieces_to_place();
-    let active_player= state.position.active_player();
+fn draw_position(state: &State, canvas: &mut Canvas) {
+    let position = &state.position;
 
-    fn generate_information(state: &mut State, ctx: &mut Context, canvas: &mut Canvas, player: Player, x_offset: f32, pieces_to_place: u8, active_player: Player) {
-        let player_name;
-        let color;
-        let piece_image: &Image;
-        match player {
-            Player::White => {
-                player_name = "WHITE";
-                color = Color::WHITE;
-                piece_image = &state.white_stone_image;
+    for (pos, &piece) in position.pieces().iter().enumerate() {
+        match piece {
+            Point::Occupied(player) => {
+                draw_piece_on_board_for_player(state, canvas, player, pos as u8);
             }
-            Player::Black => {
-                player_name = "BLACK";
-                color = Color::WHITE;
-                piece_image = &state.black_stone_image;
-            }
+            _ => continue
         }
-
-        let mut player_name = Text::new(player_name);
-        player_name.set_scale(PxScale::from(40.0));
-        let text_height = player_name.dimensions(&ctx.gfx).unwrap().h;
-        let text_position = Point2 {x: x_offset, y: 150.0 - text_height};
-        let mut param = DrawParam::default().color(color).dest(text_position).color(Color::WHITE);
-        if active_player == player {
-            param = param.color(Color::GREEN);
-        }
-        canvas.draw(&player_name, param);
-
-        let mesh = generate_board_rectangle(ctx, 0.0,0.0, 150.0, 600.0);
-        canvas.draw(&mesh, DrawParam::default().dest(Point2 {x: x_offset, y: 150.0}));
-
-        for i in 0..pieces_to_place {
-            let param = stone_param(x_offset + 75.0, 200.0 + (i as f32 * 60.0), piece_image);
-            canvas.draw(piece_image, param);
-        }
-
-
-
     }
-
-    generate_information(state, ctx, canvas, Player::White, 100.0, white_pieces_to_place, active_player);
-    generate_information(state, ctx, canvas, Player::Black, SCREEN_SIZE.0 - 250.0, black_pieces_to_place, active_player);
 }
 
-fn draw_stone_on_board_for_player(state: &mut State, canvas: &mut Canvas, player: Player, position: u32) {
+fn draw_information(state: &State, ctx: &mut Context, canvas: &mut Canvas) {
+    draw_player_information(state, ctx, canvas, Player::White);
+    draw_player_information(state, ctx, canvas, Player::Black);
+}
+
+fn draw_player_information(state: &State, ctx: &mut Context, canvas: &mut Canvas, player: Player) {
+    let position = &state.position;
+    let active_player = position.active_player();
+
+    draw_player_name(canvas, ctx, player, active_player == player);
+    draw_remaining_pieces(canvas, ctx, state, player);
+    draw_game_phase(canvas, position, player);
+}
+
+fn draw_player_name(canvas: &mut Canvas, ctx: &Context, player: Player, is_active_player: bool) {
+    let mut player_name = Text::new(player.to_string().to_uppercase());
+    player_name.set_scale(PxScale::from(40.0));
+
+    let text_height = player_name.dimensions(&ctx.gfx).unwrap().h;
+    let param = DrawParam::default()
+        .dest(Point2 {x: calculate_x_offset_for_player(player), y: 150.0 - text_height})
+        .color(if is_active_player {Color::GREEN} else {Color::WHITE});
+    canvas.draw(&player_name, param);
+}
+
+fn draw_remaining_pieces(canvas: &mut Canvas, ctx: &mut Context, state: &State, player: Player) {
+    let position = &state.position;
+    let piece_image = if player == Player::White {
+        &state.white_stone_image
+    } else {
+        &state.black_stone_image
+    };
+    let pieces_to_place = position.pieces_to_place_for_player(player);
+
+    let mesh = generate_board_rectangle(ctx, 0.0,0.0, 150.0, 600.0);
+    let draw_param = DrawParam::default()
+        .dest(Point2 { x: calculate_x_offset_for_player(player), y: 150.0 });
+    canvas.draw(&mesh, draw_param);
+
+    for i in 0..pieces_to_place {
+        let param = stone_param(
+            calculate_x_offset_for_player(player) + 75.0, 200.0 + (i as f32 * 60.0),
+            piece_image
+        );
+        canvas.draw(piece_image, param);
+    }
+}
+
+fn draw_game_phase(canvas: &mut Canvas, position: &Position, player: Player) {
+    let player_phase = position.get_game_phase_for_player(player);
+    let mut player_phase_text = Text::new(player_phase.to_string());
+    player_phase_text.set_scale(PxScale::from(40.0));
+    let text_position = Point2 {x: calculate_x_offset_for_player(player), y: 750.0};
+    canvas.draw(&player_phase_text, DrawParam::default().dest(text_position));
+}
+
+fn calculate_x_offset_for_player(player: Player) -> f32 {
+    if player == Player::White { 100.0} else { SCREEN_SIZE.0 - 250.0 }
+}
+
+
+fn draw_piece_on_board_for_player(state: &State, canvas: &mut Canvas, player: Player, position: u8) {
     let i = (position % 24) as usize;
     let (x, y) = state.board[i];
 
