@@ -64,7 +64,7 @@ pub enum Player {
 }
 
 impl Player {
-    fn opposite(&self) -> Player {
+    pub fn opposite(&self) -> Player {
         match self {
             Player::White => Player::Black,
             Player::Black => Player::White
@@ -120,7 +120,7 @@ impl Display for GamePhase {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Move {
     PLACE { position: u8, kill: Option<u8> },
     MOVE { from_position: u8, to_position: u8, kill: Option<u8> }
@@ -478,6 +478,23 @@ impl Position {
         (index as usize) < PIECE_COUNT
     }
 
+    pub fn is_corner(&self, point: u8) -> bool {
+        (point % 2) == 1
+    }
+
+    pub fn for_each_neighbour<F>(&self, point: u8, mut func: F) where F: FnMut(Point) {
+        func(self.get_piece_at_position(point + 1 % 8));
+        func(self.get_piece_at_position(point - 1 % 8));
+        if !self.is_corner(point) {
+            if (point + 8) / 24 < 1 {
+                func(self.get_piece_at_position(point + 8))
+            }
+            if (point as i32 - 8) >= 0 {
+                func(self.get_piece_at_position(point - 8))
+            }
+        }
+    }
+
     pub fn pieces(&self) -> [Point; PIECE_COUNT] {
         self.pieces
     }
@@ -488,6 +505,10 @@ impl Position {
 
     pub fn active_player(&self) -> Player {
         self.active_player
+    }
+
+    pub fn opposite_player(&self) -> Player {
+        self.active_player.opposite()
     }
 
     pub fn set_pieces_to_place(&mut self, pieces_to_place: (u8, u8)) {
