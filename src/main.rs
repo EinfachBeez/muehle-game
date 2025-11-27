@@ -116,7 +116,7 @@ impl State {
                             return;
                         }
 
-                        let move_action = Move::PLACE {position: piece_pos, kill: None};
+                        let move_action = Move::Place {position: piece_pos, kill: None};
                         let result = Self::execute_action(current_position, move_action);
                         match result {
                             Some(position) => {
@@ -136,7 +136,7 @@ impl State {
                             return;
                         }
 
-                        let move_action = Move::MOVE {from_position: from, to_position: piece_pos, kill: None};
+                        let move_action = Move::Move {from_position: from, to_position: piece_pos, kill: None};
                         let result = Self::execute_action(current_position, move_action);
                         match result {
                             Some(position) => {
@@ -151,7 +151,7 @@ impl State {
             Action::Kill(from, to, ) => {
                 match game_phase {
                     GamePhase::Placing => {
-                        let move_action = Move::PLACE {position: from, kill: Some(piece_pos)};
+                        let move_action = Move::Place {position: from, kill: Some(piece_pos)};
                         let result = Self::execute_action(current_position, move_action);
                         match result {
                             Some(position) => {
@@ -165,7 +165,7 @@ impl State {
                             return;
                         }
 
-                        let move_action = Move::MOVE { from_position: from, to_position: to.unwrap(), kill: Some(piece_pos) };
+                        let move_action = Move::Move { from_position: from, to_position: to.unwrap(), kill: Some(piece_pos) };
                         let result = Self::execute_action(current_position, move_action);
                         match result {
                             Some(position) => {

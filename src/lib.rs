@@ -95,7 +95,7 @@ impl Point {
         }
     }
 
-    fn is_occupied_by_player(&self, player: Player) -> bool {
+    pub fn is_occupied_by_player(&self, player: Player) -> bool {
         match self {
             Point::Occupied(p) if p.eq(&player) => true,
             _ => false
@@ -122,14 +122,14 @@ impl Display for GamePhase {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Move {
-    PLACE { position: u8, kill: Option<u8> },
-    MOVE { from_position: u8, to_position: u8, kill: Option<u8> }
+    Place { position: u8, kill: Option<u8> },
+    Move { from_position: u8, to_position: u8, kill: Option<u8> }
 }
 
 impl Display for Move {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Move::PLACE { position, kill } => {
+            Move::Place { position, kill } => {
                 let mut format = format!("P {}", position + 1);
                 if let Some(kill_pos) = kill {
                     format.push_str(" T ");
@@ -138,7 +138,7 @@ impl Display for Move {
                 }
                 write!(f, "{}", format)
             }
-            Move::MOVE { from_position, to_position, kill } => {
+            Move::Move { from_position, to_position, kill } => {
                 let mut format = format!("M {} {}", from_position + 1, to_position + 1);
                 if let Some(kill_pos) = kill {
                     format.push_str(" T ");
@@ -197,7 +197,7 @@ impl Position {
         match game_phase {
             GamePhase::Placing => {
                 match move_action {
-                    Move::PLACE { position, kill } => {
+                    Move::Place { position, kill } => {
                         if !Self::is_index_valid(position) {
                             return false;
                         }
@@ -214,7 +214,7 @@ impl Position {
             },
             GamePhase::Moving => {
                 match move_action {
-                    Move::MOVE { from_position, to_position, kill } => {
+                    Move::Move { from_position, to_position, kill } => {
                         if !Self::is_index_valid(from_position) && !Self::is_index_valid(to_position) {
                             return false;
                         }
@@ -237,7 +237,7 @@ impl Position {
             },
             GamePhase::Flying => {
                 match move_action {
-                    Move::MOVE { from_position, to_position, kill } => {
+                    Move::Move { from_position, to_position, kill } => {
                         if !Self::is_index_valid(from_position) && !Self::is_index_valid(to_position) {
                             return false;
                         }
@@ -267,14 +267,14 @@ impl Position {
             return;
         }
         match move_action {
-            Move::PLACE {position, kill} => {
+            Move::Place {position, kill} => {
                 self.set_piece_at_position(position, Point::Occupied(self.active_player));
 
                 if let Some(pos) = kill {
                     self.set_piece_at_position(pos, Point::Empty);
                 }
             }
-            Move::MOVE {from_position, to_position, kill} => {
+            Move::Move {from_position, to_position, kill} => {
                 let point = self.get_piece_at_position(from_position);
                 self.set_piece_at_position(from_position, Point::Empty);
                 self.set_piece_at_position(to_position, point);
@@ -395,13 +395,13 @@ impl Position {
                     .filter(move |&points| !self.get_piece_at_position(points as u8).is_occupied());
 
                 Either::Left(placement_iter.flat_map(move |pos| {
-                    let default_placement = Move::PLACE {position: pos as u8, kill: None};
+                    let default_placement = Move::Place {position: pos as u8, kill: None};
 
                     if self.is_mill_closed(None, pos as u8, player) {
                         Either::Left(self.get_pieces_for_player(player.opposite())
                             .filter(move |&x| self.is_piece_removal_possible(None, x))
                             .map(move |kill| {
-                                Move::PLACE { position: pos as u8, kill: Some(kill) }
+                                Move::Place { position: pos as u8, kill: Some(kill) }
                             }))
                     } else {
                        Either::Right(once(default_placement))
@@ -416,13 +416,13 @@ impl Position {
                         .copied()
                         .filter(move |&adjacent| self.get_piece_at_position(adjacent) == Point::Empty)
                         .flat_map(move |to| {
-                            let default_move = Move::MOVE {from_position: pos, to_position: to, kill: None};
+                            let default_move = Move::Move {from_position: pos, to_position: to, kill: None};
 
                             if self.is_mill_closed(Some(pos), to, player) {
                                 Either::Left(self.get_pieces_for_player(player.opposite())
                                     .filter(move |&x| self.is_piece_removal_possible(Some(pos), x))
                                     .map(move |kill| {
-                                        Move::MOVE {from_position: pos, to_position: to, kill: Some(kill)}
+                                        Move::Move {from_position: pos, to_position: to, kill: Some(kill)}
                                     }))
                             } else {
                                 Either::Right(once(default_move))
@@ -437,13 +437,13 @@ impl Position {
                     (0..PIECE_COUNT)
                         .filter(move |&point| self.get_piece_at_position(point as u8) == Point::Empty)
                         .flat_map(move |to| {
-                            let default_fly = Move::MOVE {from_position: pos, to_position: to as u8, kill: None};
+                            let default_fly = Move::Move {from_position: pos, to_position: to as u8, kill: None};
 
                             if self.is_mill_closed(Some(pos), to as u8, player) {
                                 Either::Left(self.get_pieces_for_player(player.opposite())
                                     .filter(move |&x| self.is_piece_removal_possible(Some(pos), x))
                                     .map(move |kill| {
-                                        Move::MOVE {from_position: pos, to_position: to as u8, kill: Some(kill)}
+                                        Move::Move {from_position: pos, to_position: to as u8, kill: Some(kill)}
                                     }))
                             } else {
                                 Either::Right(once(default_fly))

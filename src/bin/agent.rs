@@ -57,26 +57,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         dbg!(best_move);
 
         if let Some(best_move) = best_move {
-            match best_move.action {
-                Action::Place(to) => {
-                    let index_to = get_index_for_point(to);
-                    if let Some(remove) = best_move.take {
-                        let index_remove = get_index_for_point(remove);
-                        println!("P {} T {}", index_to, index_remove);
-                    }else{
-                        println!("P {}", index_to);
+            match best_move {
+                Move::Place {position, kill} => {
+                    if let Some(remove) = kill {
+                        println!("P {} T {}", position, remove);
+                    } else {
+                        println!("P {}", position);
                     }
                 }
-                Action::Move(from, to) => {
-                    let index_from = get_index_for_point(from);
-
-                    let index_to = get_index_for_point(to);
-
-                    if let Some(remove) = best_move.take {
-                        let index_remove = get_index_for_point(remove);
-                        println!("M {} {} T {}", index_from, index_to, index_remove);
+                Move::Move {from_position, to_position, kill} => {
+                    if let Some(remove) = kill {
+                        println!("M {} {} T {}", from_position, to_position, remove);
                     } else {
-                        println!("M {} {}", index_from, index_to);
+                        println!("M {} {}", from_position, to_position);
                     }
                 }
             }
@@ -87,6 +80,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 }
 
+/*
 fn pick_best_move_first(moves: &mut impl Iterator<Item=Move>, hint: Option<Move>) {
     let mut head = 0;
 
@@ -103,7 +97,7 @@ fn pick_best_move_first(moves: &mut impl Iterator<Item=Move>, hint: Option<Move>
             head += 1;
         }
     }
-}
+}*/
 
 
 fn minimax(position: &Position, game_phase: GamePhase, max_depth: u32) -> Option<Move> {
@@ -147,12 +141,12 @@ fn negamax(
 
     let mut value: i32 = i32::MIN;
     let mut best_move: Option<Move> = None;
-    let mut possible_moves = position.enumerate_moves();
-    if possible_moves.next().is_none() {
+    let mut possible_moves = position.enumerate_moves().peekable();
+    if possible_moves.peek().is_none() {
         return (rate_position(position, game_phase), None);
     }
 
-    pick_best_move_first(&mut possible_moves, move_hint);
+    //pick_best_move_first(&mut possible_moves, move_hint);
 
     for move_action in possible_moves {
         let applied_move = calculate_next_position(position, move_action).unwrap();
@@ -249,7 +243,7 @@ fn rate_position(position: &Position, game_phase: GamePhase) -> i32 {
 
                 if is_trapped {
                     let is_my_mill = position.is_mill_closed(None, point, active_player);
-                    let is_blocking = check_is_blocking(position, position.get_piece_at_position(point));
+                    let is_blocking = check_is_blocking(position, point);
                     if !is_my_mill && !is_blocking {
                         position_value -= 300;
                     }
@@ -261,23 +255,25 @@ fn rate_position(position: &Position, game_phase: GamePhase) -> i32 {
 
     }
 
+    // TODO
     let mut position1 = position.clone();
-    let x = &position1.switch_player();
+    position1.switch_player();
     let x1: Vec<Move> = position1.enumerate_moves().collect();
     position_value += ((possible_moves.len() as i32) - (x1.len() as i32)) * 20;
     position_value
 }
 
-fn check_is_blocking(position: &Position, point: Point) -> bool {
+fn check_is_blocking(position: &Position, point: u8) -> bool {
     let opponent_player = position.opposite_player();
+
     for line in MILL_LINES.iter() {
         if line.contains(&point) {
             let mut opponent_stones = 0;
             let mut own_stones = 0;
 
             for &line_point in line.iter() {
-                let player = position.get(line_point);
-                if player == opponent_player {
+                let piece_at_line_point = position.get_piece_at_position(line_point);
+                if piece_at_line_point.is_occupied_by_player(opponent_player) {
                     opponent_stones += 1;
                 } else if line_point == point {
                     own_stones += 1;
