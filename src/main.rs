@@ -1,5 +1,9 @@
+mod agent_helper;
+
 use std::f32::consts::PI;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use ggegui::egui::Window;
+use ggegui::Gui;
 use ggez::conf::{WindowMode, WindowSetup};
 use ggez::glam::Vec2;
 use ggez::graphics::{Canvas, Color, DrawMode, DrawParam, Drawable, Image, Mesh, PxScale, Rect, Text};
@@ -8,6 +12,7 @@ use ggez::*;
 use ggez::event::{MouseButton};
 use ggez::input::keyboard::{KeyCode, KeyInput};
 use muehle_game::{calculate_next_position, GamePhase, Move, Player, Point, Position};
+use crate::agent_helper::Agent;
 
 // pixel size of a point
 const POINT_SIZE: f32 = 10.0;
@@ -41,6 +46,8 @@ enum Action {
 }
 
 struct State {
+    gui: Gui,
+
     position: Position,
     board: [(f32, f32); 24],
     gui_phase: GuiPhase,
@@ -50,12 +57,17 @@ struct State {
     black_stone_image: Image,
 
     current_action: Action,
+
+    agent_white: Option<Agent>,
+    agent_black: Option<Agent>
 }
 
 impl State {
     fn new(ctx: &mut Context) -> State {
         let default_position = Position::new(Player::White);
         State {
+            gui: Gui::new(ctx),
+
             position: default_position,
             board: generate_board(),
             gui_phase: GuiPhase::Initial,
@@ -63,12 +75,17 @@ impl State {
             white_stone_image: Image::from_path(ctx, WHITE_STONES_PATH).unwrap(),
             black_stone_image: Image::from_path(ctx, BLACK_PIECE_PATH).unwrap(),
 
-            current_action: Action::Choose
+            current_action: Action::Choose,
+
+            agent_white: None,
+            agent_black: None
         }
     }
 
     fn start_game(&mut self) {
         self.gui_phase = GuiPhase::Active;
+
+        // Implement agent
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -122,7 +139,10 @@ impl State {
                             Some(position) => {
                                 self.update_position(position);
                             }
-                            _ => return
+                            _ => {
+                                self.update_action(Action::Choose);
+                                return;
+                            }
                         }
                     }
                     _ => self.update_action(Action::Move(piece_pos))
@@ -142,7 +162,10 @@ impl State {
                             Some(position) => {
                                 self.update_position(position);
                             }
-                            _ => return
+                            _ => {
+                                self.update_action(Action::Choose);
+                                return;
+                            }
                         }
                     }
                     _ => self.update_action(Action::Kill(from, None))
@@ -157,11 +180,15 @@ impl State {
                             Some(position) => {
                                 self.update_position(position);
                             }
-                            _ => return
+                            _ => {
+                                self.update_action(Action::Choose);
+                                return;
+                            }
                         }
                     }
                     GamePhase::Moving | GamePhase::Flying => {
                         if to.is_none() {
+                            self.update_action(Action::Choose);
                             return;
                         }
 
@@ -171,7 +198,10 @@ impl State {
                             Some(position) => {
                                 self.update_position(position);
                             }
-                            _ => return
+                            _ => {
+                                self.update_action(Action::Choose);
+                                return;
+                            }
                         }
                     }
                 }
@@ -206,6 +236,8 @@ impl event::EventHandler for State {
             //TODO
         }
 
+        draw_text_input(self, _ctx);
+
         Ok(())
     }
 
@@ -220,6 +252,9 @@ impl event::EventHandler for State {
 
         draw_current_action(self, _ctx, &mut canvas);
         draw_timer(self, _ctx, &mut canvas);
+
+        canvas.draw(&self.gui, DrawParam::default().dest(Vec2::ZERO));
+
         canvas.finish(_ctx)?;
         Ok(())
     }
@@ -258,6 +293,18 @@ impl event::EventHandler for State {
         Ok(())
     }
 }
+
+fn draw_text_input(state: &mut State, ctx: &mut Context) {
+    let gui_ctx = state.gui.ctx();
+    Window::new("Test").show(&gui_ctx, |ui| {
+        ui.label("Test");
+        if ui.button("button").clicked() {
+            println!("Test");
+        }
+    });
+    state.gui.update(ctx);
+}
+
 
 fn draw_timer(state: &State, ctx: &mut Context, canvas: &mut Canvas) {
     let duration = state.elapsed_time_in_sec().unwrap_or(0);

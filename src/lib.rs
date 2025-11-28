@@ -1,8 +1,9 @@
 use log::warn;
 use std::fmt::{Debug, Display, Error, Formatter};
 use std::iter::once;
-use std::str;
+use std::{result, str};
 use std::str::{FromStr};
+use anyhow::anyhow;
 use either::Either;
 
 const MILLS: [[u8;3]; 16] = [
@@ -124,6 +125,42 @@ impl Display for GamePhase {
 pub enum Move {
     Place { position: u8, kill: Option<u8> },
     Move { from_position: u8, to_position: u8, kill: Option<u8> }
+}
+
+impl FromStr for Move {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut string = s.split(" ");
+
+        let result;
+        match string.next().unwrap() {
+            "P" => {
+                let position: u8 = string.next().unwrap().parse()?;
+                let kill: Result<u8, _> = string.next().unwrap().parse();
+                if let Ok(take) = kill {
+                    result = Move::Place { position, kill: Some(take) }
+                } else {
+                    result = Move::Place { position, kill: None }
+                }
+            }
+            "M" => {
+                let from_position: u8 = string.next().unwrap().parse()?;
+                let to_position: u8 = string.next().unwrap().parse()?;
+                let kill: Result<u8, _> = string.next().unwrap().parse();
+                if let Ok(take) = kill {
+                    result = Move::Move { from_position, to_position, kill: Some(take) }
+                } else {
+                    result = Move::Move { from_position, to_position, kill: None }
+                }
+            }
+            _ => {
+                return Err(anyhow!("Unknown action"));
+            }
+        }
+
+        Ok(result)
+    }
 }
 
 impl Display for Move {
