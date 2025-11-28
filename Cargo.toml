@@ -10,6 +10,7 @@ ggez = "0.9.3"
 anyhow = "1.0.100"
 ggegui = "0.4.0"
 log = "0.4.28"
+rfd = "0.16.0"
 
 [[bin]]
 name = "enumerate_moves"

@@ -2,7 +2,7 @@ mod agent_helper;
 
 use std::f32::consts::PI;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use ggegui::egui::Window;
+use ggegui::egui::{Ui, Window};
 use ggegui::Gui;
 use ggez::conf::{WindowMode, WindowSetup};
 use ggez::glam::Vec2;
@@ -11,6 +11,7 @@ use ggez::mint::Point2;
 use ggez::*;
 use ggez::event::{MouseButton};
 use ggez::input::keyboard::{KeyCode, KeyInput};
+use rfd::FileDialog;
 use muehle_game::{calculate_next_position, GamePhase, Move, Player, Point, Position};
 use crate::agent_helper::Agent;
 
@@ -45,6 +46,46 @@ enum Action {
     Kill(u8, Option<u8>) // kill is also possible in place phase
 }
 
+struct AgentService {
+    agent_active: bool,
+    agent: Option<Agent>,
+    exe: String
+}
+
+impl AgentService {
+    fn new() -> Self {
+        AgentService {
+            agent_active: false,
+            agent: None,
+            exe: String::new()
+        }
+    }
+
+    pub fn agent_active(&self) -> bool {
+        self.agent_active
+    }
+
+    pub fn agent(&self) -> &Option<Agent> {
+        &self.agent
+    }
+
+    pub fn exe(&self) -> &str {
+        &self.exe
+    }
+
+    pub fn set_agent_active(&mut self, agent_active: bool) {
+        self.agent_active = agent_active;
+    }
+
+    pub fn set_agent(&mut self, agent: Option<Agent>) {
+        self.agent = agent;
+    }
+
+    pub fn set_exe(&mut self, exe: String) {
+        self.exe = exe;
+    }
+}
+
 struct State {
     gui: Gui,
 
@@ -58,8 +99,8 @@ struct State {
 
     current_action: Action,
 
-    agent_white: Option<Agent>,
-    agent_black: Option<Agent>
+    agent_white: AgentService,
+    agent_black: AgentService
 }
 
 impl State {
@@ -77,8 +118,8 @@ impl State {
 
             current_action: Action::Choose,
 
-            agent_white: None,
-            agent_black: None
+            agent_white: AgentService::new(),
+            agent_black: AgentService::new()
         }
     }
 
@@ -236,7 +277,7 @@ impl event::EventHandler for State {
             //TODO
         }
 
-        draw_text_input(self, _ctx);
+        display_agent_setup_window(self, _ctx);
 
         Ok(())
     }
@@ -294,17 +335,28 @@ impl event::EventHandler for State {
     }
 }
 
-fn draw_text_input(state: &mut State, ctx: &mut Context) {
+fn display_agent_setup_window(state: &mut State, ctx: &mut Context) {
     let gui_ctx = state.gui.ctx();
-    Window::new("Test").show(&gui_ctx, |ui| {
-        ui.label("Test");
-        if ui.button("button").clicked() {
-            println!("Test");
-        }
+    let option = Window::new("Agent Setup").show(&gui_ctx, |ui| {
+        setup_individual_agent(&mut state.agent_white, ui);
+        setup_individual_agent(&mut state.agent_black, ui);
     });
     state.gui.update(ctx);
 }
 
+fn setup_individual_agent(agent_service: &mut AgentService, ui: &mut Ui) {
+    ui.label("White Player");
+    ui.radio_value(&mut agent_service.agent_active, true, "Computer");
+    if agent_service.agent_active {
+        ui.label("Exe:");
+        ui.text_edit_singleline(&mut agent_service.exe);
+        if ui.button("Open file...").clicked() {
+            if let Some(path) = FileDialog::new().pick_file() {
+                agent_service.exe = path.display().to_string();
+            }
+        }
+    }
+}
 
 fn draw_timer(state: &State, ctx: &mut Context, canvas: &mut Canvas) {
     let duration = state.elapsed_time_in_sec().unwrap_or(0);
