@@ -1,4 +1,5 @@
 pub mod datastructures;
+pub mod search;
 
 use crate::datastructures::movement::Move;
 use crate::datastructures::phase::GamePhase;

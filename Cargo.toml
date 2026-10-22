@@ -11,6 +11,8 @@ anyhow = "1.0.100"
 ggegui = "0.4.0"
 rfd = "0.17.2"
 log = "0.4.28"
+hashbrown = "0.17.1"
+peak_alloc = "0.3.0"
 
 [[bin]]
 name = "enumerate_moves"
@@ -19,3 +21,7 @@ path = "src/bin/enumerate_moves.rs"
 [[bin]]
 name = "agent"
 path = "src/bin/agent.rs"
+
+[[bin]]
+name = "complete_search"
+path = "src/bin/complete_search.rs"
