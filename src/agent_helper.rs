@@ -1,8 +1,9 @@
-use std::io::{Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::str::FromStr;
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Receiver, TryRecvError};
 use std::time::Instant;
+use anyhow::anyhow;
 use muehle_game::datastructures::movement::Move;
 use muehle_game::datastructures::phase::GamePhase;
 use muehle_game::datastructures::position::Position;
@@ -10,8 +11,7 @@ use muehle_game::datastructures::position::Position;
 #[derive(PartialEq)]
 enum AgentState {
     Idle,
-    Computing,
-    Error
+    Computing
 }
 
 pub struct Agent {
@@ -32,42 +32,9 @@ impl Agent {
             .stdin(Stdio::piped())
             .spawn()?;
 
-        let output = child.stdout.take().unwrap();
-        let err = child.stderr.take().unwrap();
+        let receive_output = spawn_line_reader(child.stdout.take().unwrap());
+        let receive_err = spawn_line_reader(child.stderr.take().unwrap());
         let input = child.stdin.take().unwrap();
-
-        let (send_output, receive_output) = std::sync::mpsc::channel();
-        let (send_err, receive_err) = std::sync::mpsc::channel();
-
-        // Spawn thread for stdout
-        std::thread::spawn(move || {
-            use std::io::{BufRead, BufReader};
-            let reader = BufReader::new(output);
-            for line in reader.lines() {
-                if let Ok(line) = line {
-                    if send_output.send(line).is_err() {
-                        break;
-                    }
-                } else {
-                    break;
-                }
-            }
-        });
-
-        // Spawn thread for stderr
-        std::thread::spawn(move || {
-            use std::io::{BufRead, BufReader};
-            let reader = BufReader::new(err);
-            for line in reader.lines() {
-                if let Ok(line) = line {
-                    if send_err.send(line).is_err() {
-                        break;
-                    }
-                } else {
-                    break;
-                }
-            }
-        });
 
         Ok(Self {
             process: child,
@@ -82,10 +49,15 @@ impl Agent {
 
     pub fn update_log(&mut self) {
         while let Ok(line) = self.receive_err.try_recv() {
-            self.log.push_str("STDERR: ");
-            self.log.push_str(&line);
-            self.log.push('\n');
+            self.log_line("STDERR", &line);
         }
+    }
+
+    fn log_line(&mut self, prefix: &str, line: &str) {
+        self.log.push_str(prefix);
+        self.log.push_str(": ");
+        self.log.push_str(line);
+        self.log.push('\n');
     }
 
     pub fn query(&mut self, conf: &Position, phase: GamePhase) -> anyhow::Result<Option<Move>> {
@@ -93,29 +65,25 @@ impl Agent {
             self.time.begin_query();
             let phase = match phase {
                 GamePhase::Placing => format!("P {}", (9 - conf.pieces_to_place_for_player(conf.active_player())) + 1),
-                GamePhase::Moving => "M".to_owned(),
-                GamePhase::Flying => "M".to_owned()
+                GamePhase::Moving | GamePhase::Flying => "M".to_owned()
             };
 
             let cmd = format!("{} {}", phase, conf.to_string());
             writeln!(self.input, "{}", &cmd)?;
-            self.log.push_str("QUERY: ");
-            self.log.push_str(&cmd);
-            self.log.push('\n');
+            self.log_line("QUERY", &cmd);
 
             self.state = AgentState::Computing;
-        } else if self.state == AgentState::Computing {
-            while let Ok(line) = self.receive_output.try_recv() {
-                self.log.push_str("REPLY: ");
-                self.log.push_str(&line);
-                self.log.push('\n');
-                if let Ok(m) = Move::from_str(&line) {
-                    self.time.complete_query();
+        } else {
+            match self.receive_output.try_recv() {
+                Ok(line) => {
+                    self.log_line("REPLY", &line);
                     self.state = AgentState::Idle;
+                    let m = Move::from_str(&line)?;
+                    self.time.complete_query();
                     return Ok(Some(m));
-                };
-                self.state = AgentState::Error;
-                break;
+                }
+                Err(TryRecvError::Disconnected) => return Err(anyhow!("agent process exited")),
+                Err(TryRecvError::Empty) => ()
             }
         }
         Ok(None)
@@ -125,6 +93,18 @@ impl Agent {
         self.process.kill()?;
         Ok(())
     }
+}
+
+fn spawn_line_reader(stream: impl Read + Send + 'static) -> Receiver<String> {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(stream).lines().map_while(Result::ok) {
+            if sender.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    receiver
 }
 
 pub struct TimeTracker {

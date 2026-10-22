@@ -2,9 +2,11 @@ use std::error::Error;
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
-use muehle_game::calculate_next_position;
+use std::collections::HashMap;
+use muehle_game::{calculate_next_position, MILLS};
 use muehle_game::datastructures::movement::Move;
 use muehle_game::datastructures::phase::GamePhase;
+use muehle_game::datastructures::player::Player;
 use muehle_game::datastructures::point::Point;
 use muehle_game::datastructures::position::Position;
 
@@ -23,7 +25,7 @@ impl SearchContext {
 
     #[inline(always)]
     fn check_time(&self) -> bool {
-        if self.start.elapsed() >= Duration::from_millis(950) {
+        if self.start.elapsed() >= Duration::from_millis(915) {
             self.timeout.store(true, Ordering::Relaxed);
             return true;
         }
@@ -32,29 +34,17 @@ impl SearchContext {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let mut position_count: HashMap<Position, u8> = HashMap::new();
+
     loop {
         let (phase, position) = parse_input();
 
-        let best_move = minimax(&position, phase, 20);
-        dbg!(best_move);
+        *position_count.entry(position.clone()).or_insert(0) += 1;
 
+        let best_move = minimax(&position, phase, 20, &mut position_count);
+        dbg!(best_move);
         if let Some(best_move) = best_move {
-            match best_move {
-                Move::Place {position, kill} => {
-                    if let Some(remove) = kill {
-                        println!("P {} T {}", position, remove);
-                    } else {
-                        println!("P {}", position);
-                    }
-                }
-                Move::Move {from_position, to_position, kill} => {
-                    if let Some(remove) = kill {
-                        println!("M {} {} T {}", from_position, to_position, remove);
-                    } else {
-                        println!("M {} {}", from_position, to_position);
-                    }
-                }
-            }
+            println!("{}", best_move);
         } else {
             println!("NONE");
         }
@@ -62,34 +52,37 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 }
 
-/*
-fn pick_best_move_first(moves: &mut impl Iterator<Item=Move>, hint: Option<Move>) {
+fn pick_best_move_first(moves: &mut Vec<Move>, hint: Option<Move>) {
     let mut head = 0;
 
     if let Some(h) = hint {
-        if let Some(pos) = moves.position(|m| m == h) {
+        if let Some(pos) = moves.iter().position(|&m| m == h) {
             moves.swap(0, pos);
             head = 1;
         }
     }
     let len = moves.len();
     for i in head..len {
-        if moves[i].take.is_some() {
+        if is_kill(moves[i]) {
             moves.swap(head, i);
             head += 1;
         }
     }
-}*/
+}
+
+fn is_kill(move_action: Move) -> bool {
+    matches!(move_action, Move::Place { kill: Some(_), .. } | Move::Move { kill: Some(_), .. })
+}
 
 
-fn minimax(position: &Position, game_phase: GamePhase, max_depth: u32) -> Option<Move> {
+fn minimax(position: &Position, game_phase: GamePhase, max_depth: u32, position_history: &mut HashMap<Position, u8>) -> Option<Move> {
     let context = SearchContext::new();
     let mut best_move = None;
 
+    let agent_color = position.active_player();
     for current_depth in 1..=max_depth {
-        let (_, mv) = negamax(position, game_phase, &context, current_depth, -1_000_000_000, 1_000_000_000, best_move);
+        let (value, mv) = negamax(position, game_phase, &context, current_depth, -1_000_000_000, 1_000_000_000, best_move, agent_color, agent_color, position_history);
 
-        //dbg
         let time_used = context.start.elapsed().as_millis();
         if context.timeout.load(Ordering::Relaxed) {
             eprintln!(">> Tiefe {} ABGEBROCHEN bei {}ms.", current_depth, time_used);
@@ -99,7 +92,11 @@ fn minimax(position: &Position, game_phase: GamePhase, max_depth: u32) -> Option
             best_move = Some(m);
             eprintln!(">> Tiefe {} fertig in {}ms. Move: {:?}", current_depth, time_used, m);
         }
-        //dbg
+
+        if value > 999_000 {
+            eprintln!("Sieg in Tiefe {} gefunden", current_depth);
+            break;
+        }
     }
     best_move
 }
@@ -111,31 +108,57 @@ fn negamax(
     depth: u32,
     mut alpha: i32,
     beta: i32,
-    move_hint: Option<Move>
+    move_hint: Option<Move>,
+    agent_color: Player,
+    current_search_color: Player,
+    position_history: &mut HashMap<Position, u8>
 ) -> (i32, Option<Move>) {
     if ctx.check_time() || ctx.timeout.load(Ordering::Relaxed) {
         return (0, None);
     }
 
+    let count = *position_history.get(position).unwrap_or(&0);
+
+    if count >= 2 {
+        return (-500, None);
+    }
+
+    position_history.insert(position.clone(), count + 1);
+
     if depth == 0 {
-        return (rate_position(position, game_phase), None);
+        let score = rate_position(position, game_phase, agent_color);
+        position_history.insert(position.clone(), count);
+        return if current_search_color == agent_color {
+            (score, None)
+        } else {
+            (-score, None)
+        }
     }
 
     let mut value: i32 = i32::MIN;
     let mut best_move: Option<Move> = None;
-    let mut possible_moves = position.enumerate_moves().peekable();
-    if possible_moves.peek().is_none() {
-        return (rate_position(position, game_phase), None);
+    let mut vec: Vec<Move> = position.enumerate_moves().collect();
+    if vec.is_empty() {
+        let score = rate_position(position, game_phase, agent_color);
+        position_history.insert(position.clone(), count);
+        return if current_search_color == agent_color {
+            (score, None)
+        } else {
+            (-score, None)
+        }
     }
 
-    //pick_best_move_first(&mut possible_moves, move_hint);
+    pick_best_move_first(&mut vec, move_hint);
 
-    for move_action in possible_moves {
+    let next_color = current_search_color.opposite();
+
+    for move_action in vec {
         let applied_move = calculate_next_position(position, move_action).unwrap();
-        let (neg_val, _) = negamax(&applied_move, game_phase, ctx, depth - 1, -beta, -alpha, None);
+        let (neg_val, _) = negamax(&applied_move, game_phase, ctx, depth - 1, -beta, -alpha, None, agent_color, next_color, position_history);
         let neg_val = -neg_val;
 
         if ctx.timeout.load(Ordering::Relaxed) {
+            position_history.insert(position.clone(), count);
             return (0, None);
         }
 
@@ -150,125 +173,63 @@ fn negamax(
         alpha = alpha.max(value);
 
     }
+    position_history.insert(position.clone(), count);
     (value, best_move)
-
 }
 
-fn rate_position(position: &Position, game_phase: GamePhase) -> i32 {
+fn rate_position(position: &Position, game_phase: GamePhase, agent_color: Player) -> i32 {
     let mut position_value: i32 = 0;
-    let active_player = position.active_player();
-    let opponent_player = active_player.opposite();
 
-    let mut own_stones: i32 = 0;
-    let mut opponent_stones: i32 = 0;
-    own_stones += position.get_piece_count_for_player(active_player) as i32;
-    opponent_stones += position.get_piece_count_for_player(opponent_player) as i32;
+    let own_stones = position.get_piece_count_for_player(agent_color) as i32;
+    let opponent_stones = position.get_piece_count_for_player(agent_color.opposite()) as i32;
 
-    let possible_moves: Vec<Move> = position.enumerate_moves().collect();
     if let GamePhase::Moving = game_phase {
-        if own_stones < 3 { return -1_000_000; }
-        if opponent_stones < 3 { return 1_000_000; }
-        if possible_moves.is_empty() {
-            return -1_000_000;
-        }
+        if own_stones < 3 { return -10_000_000; }
+        if opponent_stones < 3 { return 10_000_000; }
+        if position.enumerate_moves().next().is_none() { return -10_000_000; }
     }
 
-    position_value += (own_stones - opponent_stones) * 100;
+    position_value += (own_stones - opponent_stones) * 50000;
 
-    for line in muehle_game::MILLS.iter() {
+    for line in MILLS.iter() {
         let mut own_stones = 0;
         let mut opponent_stones = 0;
         let mut empty_field = 0;
+
         for &point in line.iter() {
             match position.get_piece_at_position(point) {
-                Point::Occupied(player) => if player == active_player {
-                    own_stones += 1
-                } else { opponent_stones += 1 },
-                _ => empty_field += 1,
+                Point::Occupied(player) if player == agent_color => own_stones += 1,
+                Point::Occupied(_) => opponent_stones += 1,
+                Point::Empty => empty_field += 1,
             }
+        }
+
+        if own_stones == 3 {
+            position_value += 10000;
         }
         if own_stones == 2 && empty_field == 1 {
-            position_value += 500;
+            position_value += 9500;
         }
-        if own_stones == 3{
-            position_value += 1500;
+        if own_stones == 1 && empty_field == 2 {
+            position_value += 1000;
         }
         if opponent_stones == 2 && empty_field == 1 {
-            position_value -= 6500;
+            position_value -= 20000;
         }
-        if opponent_stones == 3{
-            position_value -= 900;
+        if opponent_stones == 3 {
+            position_value -= 9000;
         }
-    }
-
-    for point in position.get_pieces_for_player(active_player) {
-        if position.is_corner(point) {
-            position_value += 5;
-        } else {
-            position_value += 40;
-        }
-        match game_phase {
-            GamePhase::Moving => {
-                if own_stones <= 3 {
-                    break;
-                }
-
-                // TODO
-                /*
-                // bigger than 3
-                let mut is_trapped = true;
-                position.for_each_neighbour(point, |neighbor| {
-                    if let Point::Occupied(player) = neighbor {
-                        if player.ne(&active_player) && player.ne(&opponent_player) {
-                            is_trapped = false
-                        }
-                    }
-                });*/
-/*
-                if is_trapped {
-                    let is_my_mill = position.is_mill_closed(None, point, active_player);
-                    let is_blocking = check_is_blocking(position, point);
-                    if !is_my_mill && !is_blocking {
-                        position_value -= 300;
-                    }
-                }*/
-
-            }
-            _ => {}
+        if own_stones == 1 && opponent_stones == 1 {
+            position_value -= 1000;
         }
 
     }
 
-    // TODO
-    let mut position1 = position.clone();
-    position1.switch_player();
-    let x1: Vec<Move> = position1.enumerate_moves().collect();
-    position_value += ((possible_moves.len() as i32) - (x1.len() as i32)) * 20;
+    let mut opponent_position = position.clone();
+    opponent_position.switch_player();
+    position_value += ((position.enumerate_moves().count() as i32) - (opponent_position.enumerate_moves().count() as i32)) * 20;
+
     position_value
-}
-
-fn check_is_blocking(position: &Position, point: u8) -> bool {
-    let opponent_player = position.opposite_player();
-
-    for line in muehle_game::MILLS.iter() {
-        if line.contains(&point) {
-            let mut opponent_stones = 0;
-            let mut own_stones = 0;
-
-            for &line_point in line.iter() {
-                let piece_at_line_point = position.get_piece_at_position(line_point);
-                if piece_at_line_point.is_occupied_by_player(opponent_player) {
-                    opponent_stones += 1;
-                } else if line_point == point {
-                    own_stones += 1;
-                }
-            }
-            if opponent_stones == 2 && own_stones == 1 {
-                return true;
-            }
-        }
-    }
-    false
 }
 
 fn parse_input() -> (GamePhase, Position) {
@@ -278,27 +239,27 @@ fn parse_input() -> (GamePhase, Position) {
         .read_line(&mut input)
         .expect("Failed to read line");
 
-    let mut input = input.trim().split(" ");
-    let mut pieces_remaining: Option<u8> = None;
+    let mut clean_input = input.split_whitespace();
 
-    let game_phase = input.next().expect("Failed to parse game phase");
-    let phase = match game_phase {
-        "P" => {
-            let pieces_left_str = input.next().expect("Failed to parse pieces left");
-            let pieces_left = pieces_left_str.parse().expect("Failed to parse string to u8");
-            pieces_remaining = Some(pieces_left);
-
-            GamePhase::Placing
-        },
-        "M" => GamePhase::Moving,
+    let (phase, round) = match clean_input.next().unwrap() {
+        "P" => (GamePhase::Placing, Some(clean_input.next().unwrap().parse::<u8>().unwrap())),
+        "M" => (GamePhase::Moving, None),
         _ => panic!("Unknown phase")
     };
 
-    let pos_str = input.next().expect("Failed to parse position string");
-    let mut position: Position = pos_str.parse().expect("Failed to parse position from string");
-    if let Some(pieces) = pieces_remaining {
-        position.set_pieces_to_place_for_player(position.active_player(), pieces);
-    }
+    let pos_str = clean_input.next().unwrap();
+    let mut position: Position = pos_str.parse().unwrap();
+
+    // Runde n: Weiß hat n-1 gesetzt, wenn Weiß dran ist, sonst schon n.
+    let pieces_to_place = match round {
+        Some(n) => {
+            let left = 10u8.saturating_sub(n);
+            let white_left = if position.active_player() == Player::White { left } else { left.saturating_sub(1) };
+            (white_left, left)
+        }
+        None => (0, 0)
+    };
+    position.set_pieces_to_place(pieces_to_place);
 
     (phase, position)
 }
