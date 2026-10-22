@@ -98,6 +98,7 @@ pub struct State {
     board: [(f32, f32); 24],
     gui_phase: GuiPhase,
     game_timer: Option<Duration>,
+    game_end: Option<Duration>,
 
     white_stone_image: Image,
     black_stone_image: Image,
@@ -120,6 +121,7 @@ impl State {
             board: generate_board(),
             gui_phase: GuiPhase::Initial,
             game_timer: None,
+            game_end: None,
             white_stone_image: Image::from_path(ctx, WHITE_STONES_PATH).unwrap(),
             black_stone_image: Image::from_path(ctx, BLACK_PIECE_PATH).unwrap(),
 
@@ -159,10 +161,12 @@ impl State {
             .duration_since(UNIX_EPOCH)
             .unwrap();
         self.game_timer = Some(now);
+        self.game_end = None;
     }
 
     fn stop_game(&mut self, player_won: Option<Player>) {
         self.gui_phase = GuiPhase::Finished(player_won);
+        self.game_end = Some(SystemTime::now().duration_since(UNIX_EPOCH).unwrap());
         self.kill_agents();
     }
 
@@ -181,7 +185,7 @@ impl State {
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap();
-            let elapsed = now - start;
+            let elapsed = self.game_end.unwrap_or(now) - start;
             Some(elapsed.as_secs())
         } else {
             None
