@@ -1,0 +1,75 @@
+use std::fmt::{Display, Formatter};
+use std::str::FromStr;
+use anyhow::anyhow;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Move {
+    Place { position: u8, kill: Option<u8> },
+    Move { from_position: u8, to_position: u8, kill: Option<u8> }
+}
+
+impl FromStr for Move {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut string = s.split_whitespace();
+
+        let move_action = match string.next() {
+            Some("P") => {
+                let position = parse_position(&mut string)?;
+                Move::Place { position, kill: None }
+            }
+            Some("M") => {
+                let from_position = parse_position(&mut string)?;
+                let to_position = parse_position(&mut string)?;
+                Move::Move { from_position, to_position, kill: None }
+            }
+            _ => return Err(anyhow!("Unknown action: {s}"))
+        };
+
+        let kill = match string.next() {
+            Some("T") => Some(parse_position(&mut string)?),
+            None => None,
+            Some(other) => return Err(anyhow!("Unknown token {other} in {s}"))
+        };
+
+        Ok(match move_action {
+            Move::Place { position, .. } => Move::Place { position, kill },
+            Move::Move { from_position, to_position, .. } => Move::Move { from_position, to_position, kill }
+        })
+    }
+}
+
+fn parse_position<'a>(string: &mut impl Iterator<Item = &'a str>) -> anyhow::Result<u8> {
+    let number: u8 = string.next().ok_or_else(|| anyhow!("Missing position"))?.parse()?;
+    if !(1..=24).contains(&number) {
+        return Err(anyhow!("Position {number} out of range 1..24"));
+    }
+    Ok(number - 1)
+}
+
+impl Display for Move {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Move::Place { position, kill } => {
+                let mut format = format!("P {}", position + 1);
+                if let Some(kill_pos) = kill {
+                    format.push_str(" T ");
+                    let kill_value = kill_pos + 1;
+                    format.push_str(kill_value.to_string().as_str());
+                }
+                write!(f, "{}", format)
+            }
+            Move::Move { from_position, to_position, kill } => {
+                let mut format = format!("M {} {}", from_position + 1, to_position + 1);
+                if let Some(kill_pos) = kill {
+                    format.push_str(" T ");
+                    let kill_value = kill_pos + 1;
+                    format.push_str(kill_value.to_string().as_str());
+                }
+                write!(f, "{}", format)
+            }
+        }
+
+    }
+}

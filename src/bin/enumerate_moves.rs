@@ -1,8 +1,9 @@
-use std::fs::{write, File};
+use std::fs::{File};
 use std::io::{BufRead, BufReader, BufWriter, Error, Write};
 use std::process::exit;
 use std::str::FromStr;
-use muehle_game::{Move, Position};
+use muehle_game::datastructures::movement::Move;
+use muehle_game::datastructures::position::Position;
 
 fn main() -> Result<(), Error> {
     let args: Vec<String> = std::env::args().collect();
