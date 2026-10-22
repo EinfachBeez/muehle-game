@@ -104,12 +104,13 @@ impl Position {
                         if !Self::is_index_valid(from_position) && !Self::is_index_valid(to_position) {
                             return false;
                         }
-                        if let Point::Occupied(player) = self.get_piece_at_position(from_position) {
-                            if player != self.active_player {
-                                return false;
-                            }
+                        if !self.get_piece_at_position(from_position).is_occupied_by_player(self.active_player) {
+                            return false;
                         }
                         if !Self::is_move_adjacent(from_position, to_position) {
+                            return false;
+                        }
+                        if self.get_piece_at_position(to_position).is_occupied() {
                             return false;
                         }
                         if let Some(pos) = kill {
@@ -127,10 +128,8 @@ impl Position {
                         if !Self::is_index_valid(from_position) && !Self::is_index_valid(to_position) {
                             return false;
                         }
-                        if let Point::Occupied(player) = self.get_piece_at_position(from_position) {
-                            if player != self.active_player {
-                                return false;
-                            }
+                        if !self.get_piece_at_position(from_position).is_occupied_by_player(self.active_player) {
+                            return false;
                         }
                         if self.get_piece_at_position(to_position).is_occupied() {
                             return false;
@@ -173,23 +172,10 @@ impl Position {
     }
 
     pub fn is_move_adjacent(from_position: u8, to_position: u8) -> bool {
-        if !Self::is_index_valid(from_position) && !Self::is_index_valid(to_position) {
+        if !Self::is_index_valid(from_position) || !Self::is_index_valid(to_position) {
             return false;
         }
-        if from_position == to_position {
-            return false;
-        }
-        let from_mod_position = from_position % 8;
-        let to_mod_position = to_position % 8;
-        if from_mod_position == to_mod_position {
-            return true;
-        }
-        // Nach links
-        from_mod_position == 0 && 8 - to_mod_position - 1 == 0
-            || from_mod_position != 0 && from_mod_position - 1 == to_mod_position
-            // Nach rechts
-            || to_mod_position == 0 && 8 - from_mod_position - 1 == 0
-            || to_mod_position != 0 && to_mod_position - 1 == from_mod_position
+        ADJACENT[from_position as usize].contains(&to_position)
     }
 
     pub fn is_piece_removal_possible(&self, old_piece: Option<u8>, piece: u8) -> bool {
@@ -389,9 +375,9 @@ impl Position {
             return None;
         }
 
-        let opponent_piece_count = self.get_piece_count_for_player(self.opposite_player());
-        if opponent_piece_count <= 2 {
-            return Some(self.active_player());
+        let active_piece_count = self.get_piece_count_for_player(self.active_player());
+        if active_piece_count <= 2 {
+            return Some(self.opposite_player());
         }
 
         let mut peekable = self.enumerate_moves().peekable();
