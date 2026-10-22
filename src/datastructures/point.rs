@@ -1,6 +1,6 @@
 use crate::datastructures::player::Player;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum Point {
     Empty,
     Occupied(Player)

@@ -1,5 +1,5 @@
 use crate::agent_helper::Agent;
-use ggegui::egui::{Ui, Window};
+use ggegui::egui::{Color32, Ui, Window};
 use ggegui::Gui;
 use ggez::event::MouseButton;
 use ggez::glam::Vec2;
@@ -105,7 +105,8 @@ pub struct State {
     current_action: Action,
 
     agent_white: AgentService,
-    agent_black: AgentService
+    agent_black: AgentService,
+    agent_error: Option<String>
 }
 
 impl State {
@@ -125,27 +126,34 @@ impl State {
             current_action: Action::Choose,
 
             agent_white: AgentService::new(),
-            agent_black: AgentService::new()
+            agent_black: AgentService::new(),
+            agent_error: None
         }
     }
 
     fn start_game(&mut self) {
+        self.agent_error = None;
+
+        for (agent_service, player) in [(&mut self.agent_white, Player::White), (&mut self.agent_black, Player::Black)] {
+            if !agent_service.agent_active {
+                continue;
+            }
+            match Agent::new(agent_service.exe.as_str()) {
+                Ok(agent) => agent_service.set_agent(Some(agent)),
+                Err(err) => {
+                    self.agent_error = Some(format!("Could not start {} agent ({}): {}", player, agent_service.exe, err));
+                    break;
+                }
+            }
+        }
+        if self.agent_error.is_some() {
+            self.kill_agents();
+            return;
+        }
+
+        self.position = Position::new(Player::White);
+        self.reset_action();
         self.gui_phase = GuiPhase::Active;
-
-        // Implement agent
-        if self.agent_white.agent_active && !self.agent_white.exe.is_empty() {
-            match Agent::new(self.agent_white.exe.as_str()) {
-                Ok(agent) => self.agent_white.set_agent(Some(agent)),
-                Err(err) => eprintln!("Error starting white agent with exe ({}): {}", self.agent_white.exe, err)
-            }
-        }
-
-        if self.agent_black.agent_active && !self.agent_black.exe.is_empty() {
-            match Agent::new(self.agent_black.exe.as_str()) {
-                Ok(agent) => self.agent_white.set_agent(Some(agent)),
-                Err(err) => eprintln!("Error starting white agent with exe ({}): {}", self.agent_black.exe, err)
-            }
-        }
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -155,7 +163,10 @@ impl State {
 
     fn stop_game(&mut self, player_won: Option<Player>) {
         self.gui_phase = GuiPhase::Finished(player_won);
+        self.kill_agents();
+    }
 
+    fn kill_agents(&mut self) {
         if let Some(mut agent) = self.agent_white.agent_mut().take() {
             let _ = agent.kill();
         }
@@ -306,8 +317,6 @@ impl State {
         if let Some(agent) = agent_service.agent_mut() {
             agent.update_log();
 
-            println!("{}", agent.log.as_str());
-
             let game_phase = self.position.get_game_phase_for_current_player();
 
             match agent.query(&self.position, game_phase) {
@@ -317,14 +326,14 @@ impl State {
                             self.update_position(new_pos)
                         }
                         None => {
-                            eprintln!("agent suggested invalid move");
+                            self.agent_error = Some(format!("{} agent suggested invalid move {}", active_player, move_action));
                             self.stop_game(None);
                         }
                     }
                 }
                 Ok(None) => (),
                 Err(err) => {
-                    eprintln!("Error querying agent: {}", err);
+                    self.agent_error = Some(format!("Error querying {} agent: {}", active_player, err));
                     self.stop_game(None)
                 }
             }
@@ -441,6 +450,10 @@ fn display_agent_setup_window(state: &mut State, ctx: &mut Context) {
 
         ui.separator();
 
+        if let Some(err) = &state.agent_error {
+            ui.colored_label(Color32::RED, err);
+        }
+
         if is_editable {
             if ui.button("Start Game").clicked() {
                 state.start_game();
@@ -458,7 +471,7 @@ fn display_agent_setup_window(state: &mut State, ctx: &mut Context) {
 }
 
 fn setup_individual_agent(agent_service: &mut AgentService, ui: &mut Ui) {
-    ui.radio_value(&mut agent_service.agent_active, false, "Computer");
+    ui.radio_value(&mut agent_service.agent_active, false, "Human");
     ui.radio_value(&mut agent_service.agent_active, true, "Computer");
 
     if agent_service.agent_active {

@@ -9,7 +9,7 @@ use crate::datastructures::phase::GamePhase;
 use crate::datastructures::player::Player;
 use crate::datastructures::point::Point;
 
-#[derive(Clone)]
+#[derive(Clone, Eq, PartialEq, Hash)]
 pub struct Position {
     pieces: [Point; PIECE_COUNT],
     active_player: Player,
@@ -23,6 +23,35 @@ impl Position {
             active_player: player,
             pieces_to_place: (9, 9)
         }
+    }
+
+    /// Bits 2i und 2i+1 sind Feld i (01 Weiß, 10 Schwarz), Bit 63 ist Schwarz am Zug.
+    /// Steine auf der Hand werden nicht kodiert, `from_bits` liefert immer eine Zugphase-Stellung.
+    pub fn to_bits(&self) -> u64 {
+        let mut bits: u64 = if self.active_player == Player::Black { 1 << 63 } else { 0 };
+        for (index, point) in self.pieces.iter().enumerate() {
+            let value: u64 = match point {
+                Point::Occupied(Player::White) => 0b01,
+                Point::Occupied(Player::Black) => 0b10,
+                Point::Empty => 0b00
+            };
+            bits |= value << (index * 2);
+        }
+        bits
+    }
+
+    pub fn from_bits(bits: u64) -> Self {
+        let player = if bits >> 63 == 1 { Player::Black } else { Player::White };
+        let mut position = Position::new(player);
+        position.pieces_to_place = (0, 0);
+        for index in 0..PIECE_COUNT {
+            position.pieces[index] = match (bits >> (index * 2)) & 0b11 {
+                0b01 => Point::Occupied(Player::White),
+                0b10 => Point::Occupied(Player::Black),
+                _ => Point::Empty
+            };
+        }
+        position
     }
 
     pub fn switch_player(&mut self) {

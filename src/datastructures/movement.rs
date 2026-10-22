@@ -14,39 +14,38 @@ impl FromStr for Move {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut string = s.split_whitespace();
 
-        match string.next().unwrap() {
-            "P" => {
-                let position: u8 = string.next().unwrap().parse()?;
-
-                let kill = match string.next() {
-                    Some("K") => {
-                        let kill_value = string.next().unwrap();
-                        Some(kill_value.parse()?)
-                    },
-                    _ => None
-                };
-
-                Ok(Move::Place { position, kill })
+        let move_action = match string.next() {
+            Some("P") => {
+                let position = parse_position(&mut string)?;
+                Move::Place { position, kill: None }
             }
-            "M" => {
-                let from_position: u8 = string.next().unwrap().parse()?;
-                let to_position: u8 = string.next().unwrap().parse()?;
-
-                let kill = match string.next() {
-                    Some("K") => {
-                        let kill_value = string.next().unwrap();
-                        Some(kill_value.parse()?)
-                    },
-                    _ => None
-                };
-
-                Ok(Move::Move { from_position, to_position, kill })
+            Some("M") => {
+                let from_position = parse_position(&mut string)?;
+                let to_position = parse_position(&mut string)?;
+                Move::Move { from_position, to_position, kill: None }
             }
-            _ => {
-                Err(anyhow!("Unknown action"))
-            }
-        }
+            _ => return Err(anyhow!("Unknown action: {s}"))
+        };
+
+        let kill = match string.next() {
+            Some("T") => Some(parse_position(&mut string)?),
+            None => None,
+            Some(other) => return Err(anyhow!("Unknown token {other} in {s}"))
+        };
+
+        Ok(match move_action {
+            Move::Place { position, .. } => Move::Place { position, kill },
+            Move::Move { from_position, to_position, .. } => Move::Move { from_position, to_position, kill }
+        })
     }
+}
+
+fn parse_position<'a>(string: &mut impl Iterator<Item = &'a str>) -> anyhow::Result<u8> {
+    let number: u8 = string.next().ok_or_else(|| anyhow!("Missing position"))?.parse()?;
+    if !(1..=24).contains(&number) {
+        return Err(anyhow!("Position {number} out of range 1..24"));
+    }
+    Ok(number - 1)
 }
 
 impl Display for Move {
