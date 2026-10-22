@@ -1,9 +1,11 @@
-use muehle_game::{GamePhase, Move, Position};
-use std::io::{BufReader, Write};
+use std::io::{Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::str::FromStr;
 use std::sync::mpsc::Receiver;
 use std::time::Instant;
+use muehle_game::datastructures::movement::Move;
+use muehle_game::datastructures::phase::GamePhase;
+use muehle_game::datastructures::position::Position;
 
 #[derive(PartialEq)]
 enum AgentState {
@@ -110,13 +112,13 @@ impl Agent {
                 if let Ok(m) = Move::from_str(&line) {
                     self.time.complete_query();
                     self.state = AgentState::Idle;
-                    return Ok(Option::Some(m));
+                    return Ok(Some(m));
                 };
                 self.state = AgentState::Error;
                 break;
             }
         }
-        return Ok(Option::None);
+        Ok(None)
     }
 
     pub fn kill(&mut self) -> anyhow::Result<()> {

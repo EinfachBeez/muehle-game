@@ -1,13 +1,17 @@
 #[cfg(test)]
 mod tests {
     use std::str::FromStr;
-    use muehle_game::{calculate_next_position, GamePhase, Move, Player, Position};
-    use muehle_game::Point::Occupied;
+    use muehle_game::calculate_next_position;
+    use muehle_game::datastructures::movement::Move;
+    use muehle_game::datastructures::phase::GamePhase;
+    use muehle_game::datastructures::player::Player;
+    use muehle_game::datastructures::point::Point::Occupied;
+    use muehle_game::datastructures::position::Position;
 
     #[test]
     fn test_set_and_get() {
         let mut pos = Position::new(Player::White);
-        let m = Move::PLACE {position: 3, kill: None};
+        let m = Move::Place {position: 3, kill: None};
         pos.change_piece_position(GamePhase::Placing, m);
         assert_eq!(pos.get_piece_at_position(3), Occupied(Player::White));
         print_board(&pos)
@@ -16,11 +20,11 @@ mod tests {
     #[test]
     fn test_move() {
         let mut pos = Position::new(Player::White);
-        let m = Move::PLACE {position: 23, kill: None};
-        let mut pos1 = calculate_next_position(&mut pos, GamePhase::Placing, m).unwrap();
+        let m = Move::Place {position: 23, kill: None};
+        let mut pos1 = calculate_next_position(&mut pos, m).unwrap();
         print_board(&pos1);
-        let m = Move::MOVE {from_position: 23, to_position: 3, kill: None};
-        let pos2 = calculate_next_position(&mut pos1, GamePhase::Placing, m).unwrap();
+        let m = Move::Move {from_position: 23, to_position: 3, kill: None};
+        let pos2 = calculate_next_position(&mut pos1, m).unwrap();
         print_board(&pos2);
         assert_eq!(pos2.get_piece_at_position(3), Occupied(Player::White));
     }
@@ -28,25 +32,25 @@ mod tests {
     #[test]
     fn test_adjacent() {
         let mut pos = Position::new(Player::White);
-        let place_piece = Move::PLACE {position: 9, kill: None};
+        let place_piece = Move::Place {position: 9, kill: None};
         pos.change_piece_position(GamePhase::Placing, place_piece);
-        let move_piece = Move::MOVE {from_position: 9, to_position: 16, kill: None};
+        let move_piece = Move::Move {from_position: 9, to_position: 16, kill: None};
         let x = pos.is_move_valid(GamePhase::Placing,move_piece);
         assert_eq!(true, x);
 
-        let move_piece = Move::MOVE {from_position: 8, to_position: 0, kill: None};
+        let move_piece = Move::Move {from_position: 8, to_position: 0, kill: None};
         let x = pos.is_move_valid(GamePhase::Placing,move_piece);
         assert_eq!(true, x);
 
-        let move_piece = Move::MOVE {from_position: 0, to_position: 7, kill: None};
+        let move_piece = Move::Move {from_position: 0, to_position: 7, kill: None};
         let x = pos.is_move_valid(GamePhase::Placing,move_piece);
         assert_eq!(true, x);
 
-        let move_piece = Move::MOVE {from_position: 7, to_position: 5, kill: None};
+        let move_piece = Move::Move {from_position: 7, to_position: 5, kill: None};
         let x = pos.is_move_valid(GamePhase::Placing,move_piece);
         assert_eq!(false, x);
 
-        let move_piece = Move::MOVE {from_position: 7, to_position: 6, kill: None};
+        let move_piece = Move::Move {from_position: 7, to_position: 6, kill: None};
         let x = pos.is_move_valid(GamePhase::Placing,move_piece);
         assert_eq!(true, x);
     }

@@ -1,30 +1,12 @@
-use muehle_game::{calculate_next_position, GamePhase, Move, Point, Position};
 use std::error::Error;
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
-
-pub const MILL_LINES: [[u8; 3]; 16] = [
-    [7, 0, 1],
-    [1, 2, 3],
-    [3, 4, 5],
-    [5, 6, 7],
-
-    [15, 8, 9],
-    [9, 10, 11],
-    [11, 12, 13],
-    [13, 14, 15],
-
-    [23, 16, 17],
-    [17, 18, 19],
-    [19, 20, 21],
-    [21, 22, 23],
-
-    [0, 8, 16],
-    [2, 10, 18],
-    [4, 12, 20],
-    [6, 14, 22],
-];
+use muehle_game::calculate_next_position;
+use muehle_game::datastructures::movement::Move;
+use muehle_game::datastructures::phase::GamePhase;
+use muehle_game::datastructures::point::Point;
+use muehle_game::datastructures::position::Position;
 
 struct SearchContext {
     start: Instant,
@@ -193,7 +175,7 @@ fn rate_position(position: &Position, game_phase: GamePhase) -> i32 {
 
     position_value += (own_stones - opponent_stones) * 100;
 
-    for line in MILL_LINES.iter() {
+    for line in muehle_game::MILLS.iter() {
         let mut own_stones = 0;
         let mut opponent_stones = 0;
         let mut empty_field = 0;
@@ -231,6 +213,8 @@ fn rate_position(position: &Position, game_phase: GamePhase) -> i32 {
                     break;
                 }
 
+                // TODO
+                /*
                 // bigger than 3
                 let mut is_trapped = true;
                 position.for_each_neighbour(point, |neighbor| {
@@ -239,15 +223,15 @@ fn rate_position(position: &Position, game_phase: GamePhase) -> i32 {
                             is_trapped = false
                         }
                     }
-                });
-
+                });*/
+/*
                 if is_trapped {
                     let is_my_mill = position.is_mill_closed(None, point, active_player);
                     let is_blocking = check_is_blocking(position, point);
                     if !is_my_mill && !is_blocking {
                         position_value -= 300;
                     }
-                }
+                }*/
 
             }
             _ => {}
@@ -266,7 +250,7 @@ fn rate_position(position: &Position, game_phase: GamePhase) -> i32 {
 fn check_is_blocking(position: &Position, point: u8) -> bool {
     let opponent_player = position.opposite_player();
 
-    for line in MILL_LINES.iter() {
+    for line in muehle_game::MILLS.iter() {
         if line.contains(&point) {
             let mut opponent_stones = 0;
             let mut own_stones = 0;
